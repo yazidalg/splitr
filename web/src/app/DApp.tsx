@@ -7,9 +7,17 @@
  * to read the marketing copy should never download it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLang } from '../lib/i18n.tsx';
+import { useAppLang } from './copy.app.ts';
 import { shortAddress, useWallet } from '../lib/wallet.tsx';
 import { formatPretty, parseAmount } from '../lib/split.ts';
+import { buildRows, clampWeight, previewSplit, weightOf } from '../lib/billDraft.ts';
+import {
+  isValidAddress,
+  namesByAddress,
+  useGroups,
+  type Group,
+  type GroupsApi,
+} from '../lib/groups.ts';
 import {
   ASSET_CODE,
   CONTRACT_ID,
@@ -34,7 +42,7 @@ import {
 } from '../lib/contract.ts';
 
 export default function DApp() {
-  const { t } = useLang();
+  const { t } = useAppLang();
   const { address, connect, connecting, signTransaction } = useWallet();
   const [client, setClient] = useState<SplitrClient | null>(null);
   // Reads go through an unbound client so they work before the account is
@@ -46,6 +54,11 @@ export default function DApp() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TxResult | null>(null);
   const [events, setEvents] = useState<BillEvent[]>([]);
+  const groups = useGroups();
+
+  // Bills come back from the contract as addresses. This is what turns them
+  // back into the names the group was built with.
+  const names = useMemo(() => namesByAddress(groups.groups), [groups.groups]);
 
   // One client per connected account: the signer is baked in, so reusing one
   // built for a previous address asks the wrong wallet to sign.
@@ -190,6 +203,10 @@ export default function DApp() {
             signTransaction={signTransaction}
           />
 
+          {/* Above the bill form on purpose: the roster is what makes the form
+              worth using, and the PRD's activation order is group first. */}
+          <GroupsPanel groups={groups} />
+
           <NewBill
             address={address}
             client={client}
@@ -197,6 +214,7 @@ export default function DApp() {
             signTransaction={signTransaction}
             busy={busy}
             run={run}
+            groups={groups.groups}
           />
 
           <section className="mt-12">
@@ -212,6 +230,7 @@ export default function DApp() {
                     key={bill.id}
                     bill={bill}
                     me={address}
+                    names={names}
                     client={client}
                     account={account}
                     signTransaction={signTransaction}
@@ -259,7 +278,7 @@ export type Run = (
 ) => Promise<void>;
 
 function Receipt({ result, onDismiss }: { result: TxResult; onDismiss: () => void }) {
-  const { t } = useLang();
+  const { t } = useAppLang();
   return (
     <section className="mb-8 rounded-xl border border-primary/30 bg-primary/[0.06] px-4 py-3.5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -308,7 +327,7 @@ function AccountPanel({
   run: Run;
   signTransaction: SignTx;
 }) {
-  const { t } = useLang();
+  const { t } = useAppLang();
 
   const trust = () =>
     void run('trust', async () => {
@@ -373,6 +392,167 @@ function AccountPanel({
   );
 }
 
+// --------------------------------------------------------------------- groups
+
+function GroupsPanel({ groups }: { groups: GroupsApi }) {
+  const { t } = useAppLang();
+  const [name, setName] = useState('');
+
+  return (
+    <section className="mt-8 rounded-2xl border border-border bg-card p-6">
+      <h2 className="font-display text-lg tracking-[-0.02em]">{t.groups.title}</h2>
+      <p className="mt-2 max-w-lg text-[13px] leading-relaxed text-muted-foreground">
+        {t.groups.lede}
+      </p>
+
+      <form
+        className="mt-5 flex flex-wrap gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!name.trim()) return;
+          groups.addGroup(name);
+          setName('');
+        }}
+      >
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t.groups.groupNamePlaceholder}
+          aria-label={t.groups.groupName}
+          className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3.5 py-2.5 text-[14px] outline-none focus:border-ring"
+        />
+        <button
+          type="submit"
+          disabled={name.trim() === ''}
+          className="rounded-full bg-primary px-5 py-2.5 text-[13px] font-medium text-primary-foreground disabled:opacity-50"
+        >
+          {t.groups.create}
+        </button>
+      </form>
+
+      {groups.groups.length === 0 ? (
+        <p className="mt-5 text-[13px] text-muted-foreground">{t.groups.noGroups}</p>
+      ) : (
+        <ul className="mt-5 space-y-4">
+          {groups.groups.map((group) => (
+            <GroupCard key={group.id} group={group} groups={groups} />
+          ))}
+        </ul>
+      )}
+
+      <p className="mt-5 text-[12px] text-faint">{t.groups.localOnly}</p>
+    </section>
+  );
+}
+
+function GroupCard({ group, groups }: { group: Group; groups: GroupsApi }) {
+  const { t } = useAppLang();
+  const [name, setName] = useState('');
+  const [addr, setAddr] = useState('');
+  const [badAddress, setBadAddress] = useState(false);
+
+  const ready = group.members.filter((m) => m.address).length;
+
+  const add = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    const trimmed = addr.trim();
+    // Empty is the expected case, not a mistake — that is the whole point of
+    // adding people by name. Only a non-empty value has to look like an address.
+    if (trimmed && !isValidAddress(trimmed)) {
+      setBadAddress(true);
+      return;
+    }
+    groups.addMember(group.id, name, trimmed || null);
+    setName('');
+    setAddr('');
+    setBadAddress(false);
+  };
+
+  return (
+    <li className="rounded-xl border border-border p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="font-display text-[14px] tracking-[-0.01em]">{group.name}</h3>
+        <div className="flex items-center gap-3">
+          <span className="text-[12px] text-faint">
+            {t.groups.readyCount(ready, group.members.length)}
+          </span>
+          <button
+            type="button"
+            aria-label={t.groups.deleteGroup(group.name)}
+            onClick={() => {
+              if (confirm(t.groups.confirmDelete(group.name))) groups.removeGroup(group.id);
+            }}
+            className="text-[12px] text-muted-foreground transition-colors duration-300 hover:text-destructive"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+
+      {group.members.length > 0 ? (
+        <ul className="mt-3 space-y-1.5">
+          {group.members.map((m) => (
+            <li key={m.id} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12.5px]">
+              <span
+                aria-hidden="true"
+                className={`size-1.5 shrink-0 rounded-full ${m.address ? 'bg-primary' : 'bg-border'}`}
+              />
+              <span>{m.name}</span>
+              {m.address ? (
+                <span className="font-mono text-[11.5px] text-faint">{shortAddress(m.address)}</span>
+              ) : (
+                <span className="text-[11.5px] text-muted-foreground">{t.groups.noWallet}</span>
+              )}
+              <button
+                type="button"
+                aria-label={t.groups.removeMember(m.name)}
+                onClick={() => groups.removeMember(group.id, m.id)}
+                className="ml-auto text-[12px] text-faint transition-colors duration-300 hover:text-destructive"
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <form className="mt-3 flex flex-wrap gap-2" onSubmit={add}>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t.groups.memberNamePlaceholder}
+          aria-label={t.groups.memberName}
+          className="min-w-24 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-[13px] outline-none focus:border-ring"
+        />
+        <input
+          value={addr}
+          onChange={(e) => {
+            setAddr(e.target.value);
+            setBadAddress(false);
+          }}
+          placeholder={t.groups.addressPlaceholder}
+          aria-label={`${t.groups.memberAddress} (${t.groups.memberAddressOptional})`}
+          className="min-w-40 flex-[2] rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] outline-none focus:border-ring"
+        />
+        <button
+          type="submit"
+          disabled={name.trim() === ''}
+          className="rounded-full border border-border px-4 py-2 text-[12.5px] disabled:opacity-40"
+        >
+          {t.groups.addMember}
+        </button>
+      </form>
+
+      {badAddress ? (
+        <p role="alert" className="mt-2 text-[12px] text-destructive">
+          {t.groups.badAddress}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
 // ------------------------------------------------------------------ new bill
 
 function NewBill({
@@ -382,6 +562,7 @@ function NewBill({
   signTransaction,
   busy,
   run,
+  groups,
 }: {
   address: string;
   client: SplitrClient | null;
@@ -389,29 +570,62 @@ function NewBill({
   signTransaction: SignTx;
   busy: string | null;
   run: Run;
+  groups: Group[];
 }) {
-  const { t } = useLang();
+  const { t } = useAppLang();
   const [group, setGroup] = useState('');
   const [amount, setAmount] = useState('');
   const [others, setOthers] = useState('');
+  const [groupId, setGroupId] = useState('');
+  const [weights, setWeights] = useState<Record<string, number>>({});
 
-  const members = useMemo(
-    () => others.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean),
-    [others],
+  const picked = groups.find((g) => g.id === groupId) ?? null;
+
+  const rows = useMemo(
+    () =>
+      buildRows({
+        group: picked,
+        pasted: others,
+        me: address,
+        youLabel: t.app.you,
+        shorten: shortAddress,
+      }),
+    [picked, others, address, t.app.you],
   );
+
+  const bump = (key: string, by: number) =>
+    setWeights((w) => ({ ...w, [key]: clampWeight((w[key] ?? 1) + by) }));
+
+  /**
+   * The split, the moment there is a total. This is the whole point of the
+   * ordering: the numbers are on screen with no wallet, no addresses and no
+   * transaction — the PRD's activation moment.
+   */
+  const preview = useMemo(() => previewSplit(rows, amount, weights), [rows, amount, weights]);
+
+  const missing = rows.filter((r) => !r.address);
+  const canRecord = preview !== null && missing.length === 0 && client !== null;
 
   const submit = () =>
     void run('create', async () => {
       if (!client) throw new Error('Still connecting.');
-      // The payer is always on their own bill, and the contract insists on it.
-      const all = [address, ...members.filter((m) => m !== address)];
+      if (!preview) throw new Error(t.app.previewFirst);
+
+      const members: string[] = [];
+      for (const row of rows) {
+        // Guarded by `canRecord`, but the button is not the only way in and a
+        // non-null assertion here would be a silent lie about that.
+        if (!row.address) throw new Error(t.app.needsAddresses);
+        members.push(row.address);
+      }
+
       const tx = await client.create_bill({
         payer: address,
-        group: group.trim() || 'Bill',
+        group: group.trim() || picked?.name || 'Bill',
         asset: SAC_ID,
-        total: parseAmount(amount.replace(/[^\d.]/g, '')),
-        members: all,
-        weights: all.map(() => 1),
+        total: preview.total,
+        members,
+        weights: rows.map((r) => weightOf(weights, r.key)),
       });
       const { value: id, hash } = await signAndSubmit(tx, {
         viaRelay: needsRelay(account),
@@ -420,16 +634,16 @@ function NewBill({
       setGroup('');
       setAmount('');
       setOthers('');
+      setWeights({});
       return hash
         ? { summary: id ? t.app.billRecorded(id) : t.app.billRecordedPlain, hash }
         : undefined;
     });
 
-  const ready = amount.trim() !== '' && members.length > 0 && client !== null;
-
   return (
-    <section className="rounded-2xl border border-border bg-card p-6">
+    <section className="mt-8 rounded-2xl border border-border bg-card p-6">
       <h2 className="font-display text-lg tracking-[-0.02em]">{t.app.newBill}</h2>
+
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
         <Field label={t.app.group}>
           <input
@@ -449,25 +663,127 @@ function NewBill({
           />
         </Field>
       </div>
-      <Field label={t.app.members} className="mt-4">
-        <textarea
-          value={others}
-          onChange={(e) => setOthers(e.target.value)}
-          rows={2}
-          placeholder="G… , G…"
-          className="w-full resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 font-mono text-[12px] outline-none focus:border-ring"
-        />
-        <p className="mt-2 text-[12px] text-faint">{t.app.membersHint}</p>
+
+      <Field label={t.app.useGroup} className="mt-4">
+        <select
+          value={groupId}
+          onChange={(e) => {
+            setGroupId(e.target.value);
+            // Weights are keyed by member id, so carrying them across a roster
+            // change would apply one person's portion to another.
+            setWeights({});
+          }}
+          className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-[14px] outline-none focus:border-ring"
+        >
+          <option value="">{t.app.adHoc}</option>
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name} · {t.groups.memberCount(g.members.length)}
+            </option>
+          ))}
+        </select>
       </Field>
+
+      {picked ? null : (
+        <Field label={t.app.members} className="mt-4">
+          <textarea
+            value={others}
+            onChange={(e) => setOthers(e.target.value)}
+            rows={2}
+            placeholder="G… , G…"
+            className="w-full resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 font-mono text-[12px] outline-none focus:border-ring"
+          />
+          <p className="mt-2 text-[12px] text-faint">{t.app.membersHint}</p>
+        </Field>
+      )}
+
+      {rows.length >= 2 ? (
+        <div className="mt-6">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-[13px] font-medium">{t.app.preview}</h3>
+            <span className="text-[12px] text-faint">{t.app.weight}</span>
+          </div>
+
+          <ul className="mt-3 divide-y divide-border rounded-xl border border-border">
+            {rows.map((row, i) => (
+              <li key={row.key} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-3">
+                <span className="text-[13px]">{row.name}</span>
+                {/* The contract marks the payer's own share settled on
+                    creation, so saying "you" here would undersell it. */}
+                {row.isYou ? (
+                  <span className="text-[12px] text-primary">{t.app.payerIsYou}</span>
+                ) : null}
+                {row.address ? null : (
+                  <span className="rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[11px] text-muted-foreground">
+                    {t.groups.noWallet}
+                  </span>
+                )}
+
+                <span className="ml-auto font-mono text-[13px] text-muted-foreground">
+                  {preview ? formatPretty(preview.parts[i]) : '—'}
+                </span>
+
+                <span className="flex items-center gap-1">
+                  <StepButton onClick={() => bump(row.key, -1)} label={t.app.less(row.name)}>
+                    −
+                  </StepButton>
+                  <span className="w-6 text-center font-mono text-[12.5px]">
+                    {weightOf(weights, row.key)}
+                  </span>
+                  <StepButton onClick={() => bump(row.key, 1)} label={t.app.more(row.name)}>
+                    +
+                  </StepButton>
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <p className="mt-2.5 text-[12px] text-faint">
+            {preview ? t.app.previewNote : t.app.previewFirst}
+          </p>
+          <p className="mt-1 text-[12px] text-faint">{t.app.weightHint}</p>
+        </div>
+      ) : (
+        <p className="mt-6 text-[12.5px] text-muted-foreground">{t.app.groupTooSmall}</p>
+      )}
+
+      {missing.length > 0 ? (
+        <p className="mt-5 rounded-xl border border-dashed border-border px-4 py-3 text-[12.5px] text-muted-foreground">
+          {t.app.needsAddresses}{' '}
+          {t.app.missingAddresses(missing.map((m) => m.name).join(', '))}
+        </p>
+      ) : null}
+
       <button
         type="button"
         onClick={submit}
-        disabled={!ready || busy !== null}
+        disabled={!canRecord || busy !== null}
         className="mt-5 rounded-full bg-primary px-5 py-2.5 text-[13px] font-medium text-primary-foreground disabled:opacity-50"
       >
         {busy === 'create' ? t.app.signing : t.app.createBill}
       </button>
     </section>
+  );
+}
+
+function StepButton({
+  onClick,
+  label,
+  children,
+}: {
+  onClick: () => void;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="grid size-7 place-items-center rounded-full border border-border text-[13px] leading-none transition-colors duration-300 hover:border-foreground/25"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -493,6 +809,7 @@ function Field({
 function BillCard({
   bill,
   me,
+  names,
   client,
   account,
   signTransaction,
@@ -501,13 +818,15 @@ function BillCard({
 }: {
   bill: Bill;
   me: string;
+  /** Address to group-member name, for the addresses this browser knows. */
+  names: Map<string, string>;
   client: SplitrClient | null;
   account: AccountState | null;
   signTransaction: SignTx;
   busy: string | null;
   run: Run;
 }) {
-  const { t } = useLang();
+  const { t } = useAppLang();
   const [part, setPart] = useState('');
   const mine = shareOf(bill, me);
   const remaining = mine ? mine.owes - mine.paid : 0n;
@@ -559,6 +878,10 @@ function BillCard({
                 aria-hidden="true"
                 className={`size-1.5 shrink-0 rounded-full ${settled ? 'bg-primary' : 'bg-border'}`}
               />
+              {/* The name when this browser knows it, but never instead of the
+                  address: the address is the thing the ledger actually settled
+                  with, and a local nickname must not be able to hide it. */}
+              {names.has(s.member) ? <span>{names.get(s.member)}</span> : null}
               <span className="font-mono text-faint">{shortAddress(s.member)}</span>
               {s.member === me ? <span className="text-primary">{t.app.you}</span> : null}
               <span className="ml-auto font-mono text-muted-foreground">
@@ -611,7 +934,7 @@ function BillCard({
 // ---------------------------------------------------------------- event feed
 
 function EventFeed({ events }: { events: BillEvent[] }) {
-  const { t } = useLang();
+  const { t } = useAppLang();
   if (events.length === 0) return null;
 
   return (

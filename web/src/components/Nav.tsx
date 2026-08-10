@@ -36,6 +36,24 @@ export function Nav() {
     navigate(href);
   };
 
+  /**
+   * The logo is the way home from /app. `#top` alone cannot do it: that id
+   * belongs to the Hero, which /app does not render, so the anchor pointed at
+   * nothing. Route first, then scroll — `pushState` leaves the scroll position
+   * where the app page left it, and the hash the browser would normally act on
+   * is never navigated to.
+   */
+  const onLogoClick = (e: React.MouseEvent) => {
+    setOpen(false);
+    if (route !== 'app') return; // On the landing page the plain anchor is right.
+    e.preventDefault();
+    navigate('/');
+    // `instant` overrides the global `scroll-behavior: smooth`, which would
+    // otherwise animate the trip through a page that is mounting as it scrolls.
+    // This is a page change, not an in-page jump — it should cut, not travel.
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  };
+
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : '';
     return () => {
@@ -56,8 +74,13 @@ export function Nav() {
         {/* /80 rather than /60: the light ground gives backdrop-blur far less
             to work with, and headings were reading through the pill. */}
         <nav className="flex w-full max-w-3xl items-center gap-2 rounded-full border border-border bg-background/80 py-2 pr-2 pl-4 backdrop-blur-xl sm:w-max sm:gap-5 sm:pl-5">
+          {/* `/#top` rather than `#top` on /app so the real href still resolves
+              for a middle-click or "open in new tab", which never reach the
+              handler. */}
           <a
-            href="#top"
+            href={route === 'app' ? '/#top' : '#top'}
+            onClick={onLogoClick}
+            aria-label={t.a11y.home}
             className="flex shrink-0 items-center gap-2.5 transition-opacity duration-300 hover:opacity-70"
           >
             <Mark className="size-5 text-primary" />
