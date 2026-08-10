@@ -264,6 +264,64 @@ that their floor was 1.5 — the exact thing sponsorship removes — and underst
 The formula is `(2 + subentries + numSponsoring - numSponsored) * baseReserve`; `dina` now reads
 a floor of 0 and the issuer 2.5.
 
+### Reaching the app with no XLM
+
+Sponsored reserves put a member on-chain owning nothing, but a zero-XLM account
+still cannot pay a transaction fee — and Stellar's answer, a fee-bump, has to be
+signed by the *sponsor*. That key cannot live in a browser, so `api/relay.ts` is
+the one piece of Splitr that runs on a server: the member signs the call, the
+relay wraps it in a fee-bump and submits.
+
+It is not a general relay. It signs only for a single-operation transaction that
+invokes this project's contract, and caps the fee at 0.1 XLM. Without both
+checks it is a faucet that drains the sponsor for anyone who finds the URL. Set
+`SPLITR_SPONSOR_SECRET` in the deployment environment; with it unset the
+endpoint returns 503 and the app simply asks people to fund their own account.
+
+The app only takes this route when the connected account holds less than 0.5
+XLM. Everyone else pays their own fee, which is cheaper for the sponsor and one
+less moving part.
+
+## Screenshots
+
+Taken against Stellar testnet with a real browser wallet. Every figure below is
+live state read back from the chain, not a mock-up — the contract id in the app
+header is
+[`CCMCFRZ…GWSD`](https://stellar.expert/explorer/testnet/contract/CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD)
+and every transaction hash resolves on a public explorer.
+
+### Wallet connected
+
+![The app at /app with a Freighter account connected, showing the truncated address in the nav](docs/screenshots/01-wallet-connected.png)
+
+The address sits in the nav rather than a "Connected" badge, because the useful
+question is *which* account: several of these wallets hold more than one, and
+paying from the wrong one is the mistake worth designing against.
+
+### Balance displayed
+
+![The account panel showing the connected address with its IDRX and XLM balances](docs/screenshots/02-balance.png)
+
+IDRX is the settlement asset; XLM is shown underneath because it pays the fees.
+Balances come from Horizon — an account's trustlines are classic ledger state,
+which Soroban RPC does not serve.
+
+### A settlement on testnet
+
+![A bill on the contract with one member's share being paid](docs/screenshots/03-transaction.png)
+
+Settling calls the contract, which transfers through the asset's Stellar Asset
+Contract in the same invocation that records the payment. The transfer and the
+record cannot disagree, because either both happened or neither did.
+
+### The result, shown to the user
+
+![The receipt panel showing the amount paid, the transaction hash, and a link to stellar.expert](docs/screenshots/04-transaction-result.png)
+
+The hash is a link. A confirmation without one asks to be taken on trust, which
+is the habit this project exists to replace — the whole promise is that the
+proof does not depend on trusting Splitr.
+
 ## Deploying
 
 The site is a static bundle with no server and no secrets — the contract ids in
@@ -334,10 +392,11 @@ run it twice and the second run pays nothing. Partial payments show as `OPEN …
 - ~~**Custody is unspecified in the brief.**~~ Settled at Yellow Belt for the web: the page is
   non-custodial through Stellar Wallets Kit and never sees a secret key. The CLI still holds keys,
   which is correct for an operator tool and wrong for anything a member touches.
-- **The dApp cannot yet fee-bump.** `--fee-source` covers the classic path only; a sponsored
-  member using `/app` still needs XLM to call the contract. Soroban fee-bumps work, but
-  `AssembledTransaction.signAndSend` submits the inner transaction itself, so this needs the
-  envelope built by hand.
+- **The relay is deployed but unproven.** `api/relay.ts` typechecks and its guard logic is
+  straightforward, but no request has ever reached it — verifying that needs a deployment with
+  `SPLITR_SPONSOR_SECRET` set and an account genuinely holding zero XLM.
+- **The relay has no rate limiting.** One capped fee per call, but nothing stops a caller making
+  many. Fine for testnet; not fine anywhere near real funds.
 - **Sponsorship is never revoked.** Nothing calls `revokeSponsorship`, so a sponsor's reserve is
   locked for as long as the member exists. Fine at four members, not at Blue Belt's fifty.
 - **Black Belt's 20+ mainnet users are gated on a real IDR anchor**, which the brief defers to

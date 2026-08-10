@@ -151,6 +151,63 @@ export function shareOf(bill: Bill, member: string): Share | undefined {
   return bill.shares.find((s) => s.member === member);
 }
 
+// --------------------------------------------------------------------- relay
+
+/**
+ * Below this an account cannot reliably cover a contract invocation, so the
+ * relay pays instead. Not zero: an account with a few stroops left would fail
+ * mid-flight, which is worse than never trying.
+ */
+export const FEE_FLOOR_XLM = 0.5;
+
+export function needsRelay(account: AccountState | null): boolean {
+  if (!account) return false;
+  return Number(account.xlm) < FEE_FLOOR_XLM;
+}
+
+/**
+ * Signs a contract call and gets it onto the ledger.
+ *
+ * Two routes to the same place. Normally the account pays its own fee and the
+ * SDK submits. When it holds no XLM — the whole point of sponsored onboarding —
+ * the signed envelope goes to `/api/relay`, which wraps it in a fee-bump paid
+ * by the sponsor. Either way the member signs, and the payment is debited from
+ * them; only who pays the fee differs.
+ */
+export async function signAndSubmit<T>(
+  tx: contractNs.AssembledTransaction<contractNs.Result<T>>,
+  opts: {
+    viaRelay: boolean;
+    signTransaction: SignTransaction;
+  },
+): Promise<{ value: T; hash: string | undefined }> {
+  if (!opts.viaRelay) {
+    const sent = await tx.signAndSend();
+    return { value: unwrap(sent.result), hash: sent.sendTransactionResponse?.hash };
+  }
+
+  const built = tx.built;
+  if (!built) throw new Error('Transaction was never assembled.');
+
+  const { signedTxXdr } = await opts.signTransaction(built.toXDR(), {
+    networkPassphrase: NETWORK_PASSPHRASE,
+  });
+
+  const res = await fetch('/api/relay', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ xdr: signedTxXdr }),
+  });
+  const body = (await res.json()) as { hash?: string; error?: string };
+  if (!res.ok || !body.hash) {
+    throw new Error(body.error ?? `Relay returned ${res.status}`);
+  }
+
+  // The relay reports success or failure, but not the call's return value;
+  // the caller refreshes from the contract straight after.
+  return { value: undefined as T, hash: body.hash };
+}
+
 // ------------------------------------------------------------------- account
 
 export interface AccountState {

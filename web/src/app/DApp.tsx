@@ -21,6 +21,8 @@ import {
   openTrustline,
   makeClient,
   makeReadClient,
+  needsRelay,
+  signAndSubmit,
   outstandingOf,
   readEvents,
   shareOf,
@@ -188,7 +190,14 @@ export default function DApp() {
             signTransaction={signTransaction}
           />
 
-          <NewBill address={address} client={client} busy={busy} run={run} />
+          <NewBill
+            address={address}
+            client={client}
+            account={account}
+            signTransaction={signTransaction}
+            busy={busy}
+            run={run}
+          />
 
           <section className="mt-12">
             <h2 className="font-display text-lg tracking-[-0.02em]">{t.app.yourBills}</h2>
@@ -204,6 +213,8 @@ export default function DApp() {
                     bill={bill}
                     me={address}
                     client={client}
+                    account={account}
+                    signTransaction={signTransaction}
                     busy={busy}
                     run={run}
                   />
@@ -236,6 +247,11 @@ export interface TxResult {
   summary: string;
   hash: string;
 }
+
+type SignTx = (
+  xdr: string,
+  opts?: { networkPassphrase?: string },
+) => Promise<{ signedTxXdr: string; signerAddress?: string }>;
 
 export type Run = (
   label: string,
@@ -290,10 +306,7 @@ function AccountPanel({
   account: AccountState | null;
   busy: string | null;
   run: Run;
-  signTransaction: (
-    xdr: string,
-    opts?: { networkPassphrase?: string },
-  ) => Promise<{ signedTxXdr: string; signerAddress?: string }>;
+  signTransaction: SignTx;
 }) {
   const { t } = useLang();
 
@@ -365,11 +378,15 @@ function AccountPanel({
 function NewBill({
   address,
   client,
+  account,
+  signTransaction,
   busy,
   run,
 }: {
   address: string;
   client: SplitrClient | null;
+  account: AccountState | null;
+  signTransaction: SignTx;
   busy: string | null;
   run: Run;
 }) {
@@ -396,13 +413,16 @@ function NewBill({
         members: all,
         weights: all.map(() => 1),
       });
-      const sent = await tx.signAndSend();
-      const id = unwrap(sent.result);
+      const { value: id, hash } = await signAndSubmit(tx, {
+        viaRelay: needsRelay(account),
+        signTransaction,
+      });
       setGroup('');
       setAmount('');
       setOthers('');
-      const hash = sent.sendTransactionResponse?.hash;
-      return hash ? { summary: t.app.billRecorded(id), hash } : undefined;
+      return hash
+        ? { summary: id ? t.app.billRecorded(id) : t.app.billRecordedPlain, hash }
+        : undefined;
     });
 
   const ready = amount.trim() !== '' && members.length > 0 && client !== null;
@@ -474,12 +494,16 @@ function BillCard({
   bill,
   me,
   client,
+  account,
+  signTransaction,
   busy,
   run,
 }: {
   bill: Bill;
   me: string;
   client: SplitrClient | null;
+  account: AccountState | null;
+  signTransaction: SignTx;
   busy: string | null;
   run: Run;
 }) {
@@ -496,12 +520,18 @@ function BillCard({
       const tx = amount
         ? await client.settle_part({ id: bill.id, member: me, amount })
         : await client.settle({ id: bill.id, member: me });
-      const sent = await tx.signAndSend();
-      const moved = unwrap(sent.result);
+      const { value: moved, hash } = await signAndSubmit(tx, {
+        viaRelay: needsRelay(account),
+        signTransaction,
+      });
       setPart('');
-      const hash = sent.sendTransactionResponse?.hash;
       return hash
-        ? { summary: t.app.paid(formatPretty(moved), ASSET_CODE), hash }
+        ? {
+            summary: moved
+              ? t.app.paid(formatPretty(moved), ASSET_CODE)
+              : t.app.paidPlain,
+            hash,
+          }
         : undefined;
     });
 
