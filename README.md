@@ -1,8 +1,9 @@
 # Splitr
 
-Stablecoin bill splitting on Stellar. This repo is the **White Belt Level 1** slice of the
-[product brief](context/Splitr%20Product%20Idea%20Brief.pdf): build wallets, handle balances,
-submit real on-chain transactions.
+Stablecoin bill splitting on Stellar. This repo covers **White Belt (Level 1)** and
+**Yellow Belt (Level 2)** of the [product brief](context/Splitr%20Product%20Idea%20Brief.pdf):
+wallets, balances and real on-chain transactions, then a Soroban contract, multi-wallet
+browser signing, and live event synchronisation.
 
 It is not a throwaway demo — it is the settlement substrate every later belt sits on. The
 brief's core promise ("ending disputes over who has paid") is implemented literally:
@@ -37,6 +38,47 @@ node src/cli.ts split reconcile <id>
 Verified end-to-end on testnet: a 300,000 IDRX dinner split three ways, settled by two real
 payments, reconciled from ledger history. Balances cross-check exactly against every transfer.
 
+## The contract (Yellow Belt)
+
+`soroban/contracts/splitr-split` is the same bill, recorded on-chain. Deployed to testnet at
+[`CCJ4TVX3OMKWLIC6O2QQUA6PZDHGRCXU6JF7SUUY7GDHJKUHOCHL5HIW`](https://stellar.expert/explorer/testnet/contract/CCJ4TVX3OMKWLIC6O2QQUA6PZDHGRCXU6JF7SUUY7GDHJKUHOCHL5HIW).
+
+```bash
+npm run contract:test          # 11 tests
+npm run contract:build         # 10.6 KB wasm, 5 exported functions
+node src/cli.ts bill create --group "Nasi Padang" --payer alice \
+  --amount 300000 --members alice,bob,citra
+node src/cli.ts bill settle 1 --member bob
+node src/cli.ts bill show 1
+node src/cli.ts bill watch      # follow contract events as ledgers close
+```
+
+`cargo` must be on your PATH for the contract scripts. With Homebrew's rustup it is not by
+default — the shims live in `$(brew --prefix rustup)/bin`.
+
+**Why both `split` and `bill`.** `split` settles with classic payments and rebuilds the truth
+afterwards by replaying Horizon; it needs no contract and works with any wallet on the network.
+`bill` hands the arithmetic to the contract, which computes the shares itself and moves the asset
+inside the same invocation that records the payment. There is nothing to reconcile because
+nothing can disagree. The contract settles through the asset's Stellar Asset Contract, so both
+paths move the same IDRX: after two members settled bill #1 on-chain, `wallet balance` showed
+alice up exactly 200,000 and the two payers down exactly 100,000 each.
+
+The splitting algorithm exists twice — `splitByWeights` in `src/money.ts` and
+`split_by_weights` in `lib.rs` — and `test::agrees_with_money_ts` pins the cases both must
+produce, tie-break included. Changing one without the other is the easiest way to break this repo.
+
+### Events
+
+The contract publishes `Created` and `Settled` through `#[contractevent]`, which puts them in
+the contract's SEP-48 spec. That is what lets `bill watch` decode them with
+`spec.parseEvent` — field names come from the deployed wasm, not from a copy of them kept in
+TypeScript. `id` is an indexed topic, so an indexer can follow one bill.
+
+Soroban RPC has no subscription, so `watch` polls `getEvents` on a cursor at the testnet ledger
+cadence of five seconds. The cursor makes it resumable and lossless across restarts, and a failed
+poll backs off and retries from the same cursor rather than killing the watcher.
+
 ## Landing page
 
 `web/` is the marketing site — a Vite + React + Tailwind single page, built from the PRD in
@@ -55,6 +97,20 @@ because it is the CLI's code.
 
 The root `tsconfig.json` still covers only `src/**/*.ts`; the web app has its own under `web/`, so
 `npm run typecheck` checks exactly what it always did.
+
+### Connecting a wallet
+
+The CLI holds keys. The page does not and must not — custody is this project's unresolved
+regulatory exposure, and a site that asks for a secret key is the wrong answer to it. Visitors
+bring their own wallet through [Stellar Wallets Kit](https://github.com/Creit-Tech/Stellar-Wallets-Kit):
+Freighter, xBull, Albedo, Lobstr, Hana, Rabet. "Install Freighter" is a real drop-off for someone
+who already uses Lobstr on their phone.
+
+The kit and its modules are 209 KB — 73% on top of everything else the page ships — so they are
+behind a dynamic import. A visitor who reads the page and never connects downloads none of it;
+the main bundle carries about 2.5 KB of wallet code. The choice is remembered in
+`localStorage['splitr-wallet']` and restored with `getAddress`, which reads the kit's memory
+rather than prompting, so returning without an authorised origin raises no popup.
 
 ### Theming
 
@@ -81,6 +137,19 @@ Two things follow from the language and are handled in `web/src/lib/split.ts`: t
 dots and decimals with a comma in Indonesian, and the hero headline gets a lower size ceiling
 because the same sentence runs longer and the headline has a hard two-line budget. The 7-decimal
 ledger value stays canonical in both languages, because that is the string that goes on chain.
+
+### The protocol stack section
+
+`web/src/sections/Stack.tsx` maps the five Stellar layers to their role in Splitr. It is drawn as a
+stack rather than set as a table, because the one thing worth seeing is how much of it actually
+runs: a live layer gets a filled card, a solid rail and a solid border, a planned one gets a dashed
+outline and no fill.
+
+Four of the five are live, and the section says so. The CLI calls Horizon, `Asset`, `Memo` and
+`payment`, and since Yellow Belt it also calls a deployed Soroban contract through
+`src/soroban.ts`, so the smart-contract layer is marked live. Only the SEP-24 ramp is still
+planned, and it stays planned until a real IDR anchor exists. The asset layer names IDRX rather
+than USDC because IDRX is what this repo actually issues.
 
 ### The how-it-works carousel
 

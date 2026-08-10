@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, List, Mark, X } from './Icons.tsx';
+import { ConnectWallet } from './ConnectWallet.tsx';
 import { LangToggle } from './LangToggle.tsx';
 import { ThemeToggle } from './ThemeToggle.tsx';
 import { useLang } from '../lib/i18n.tsx';
@@ -60,6 +61,8 @@ export function Nav() {
           <LangToggle className="ml-auto" />
           <ThemeToggle />
 
+          <ConnectWallet className="hidden lg:inline-flex" />
+
           <a
             href="#demo"
             className="hidden items-center gap-2 rounded-full bg-primary px-4 py-2 text-[13px] font-medium whitespace-nowrap text-primary-foreground transition-transform duration-500 ease-fluid active:scale-[0.97] sm:inline-flex"
@@ -106,6 +109,20 @@ export function Nav() {
               </a>
             </li>
           ))}
+          {/* The pill has no room for this below lg, so the menu carries it. */}
+          <li
+            className="mt-6 transition-all duration-700 ease-fluid"
+            style={{
+              transitionDelay: open ? `${120 + links.length * 70}ms` : '0ms',
+              transform: open ? 'translateY(0)' : 'translateY(2rem)',
+              opacity: open ? 1 : 0,
+            }}
+          >
+            <ConnectWallet />
+            <p className="mt-3 max-w-xs text-[12px] leading-relaxed text-faint">
+              {t.wallet.custody}
+            </p>
+          </li>
         </ul>
       </div>
     </>

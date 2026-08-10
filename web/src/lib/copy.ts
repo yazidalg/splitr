@@ -35,6 +35,17 @@ const en = {
     closeMenu: 'Close menu',
   },
 
+  wallet: {
+    connect: 'Connect wallet',
+    connecting: 'Connecting…',
+    disconnect: 'Disconnect',
+    connected: 'Connected',
+    // Said once, near the button, because it is the question people actually
+    // have before clicking it.
+    custody: 'Splitr never sees your secret key. You sign in your own wallet.',
+    failed: 'Could not connect',
+  },
+
   hero: {
     line1: 'Who owes what,',
     line2: "and who has paid.",
@@ -184,6 +195,45 @@ const en = {
     ],
   },
 
+  stack: {
+    title: 'The stack it runs on.',
+    lede: 'Five layers. Three of them already carry real transactions on testnet, and two are still ahead.',
+    live: 'Live on testnet',
+    planned: 'Planned',
+    layers: [
+      {
+        layer: 'Network and transactions',
+        protocol: 'Stellar Core + Horizon',
+        role: 'Sends and receives payments, checks balances, and reads history.',
+        live: true,
+      },
+      {
+        layer: 'Asset',
+        protocol: 'Stellar Assets (IDRX)',
+        role: 'The unit of value that moves between people.',
+        live: true,
+      },
+      {
+        layer: 'Smart contract',
+        protocol: 'Soroban (Rust)',
+        role: 'Group logic, splitting, and who still owes what.',
+        live: true,
+      },
+      {
+        layer: 'On-chain proof',
+        protocol: 'Transaction hash + ledger',
+        role: 'The receipt that says paid, and that nobody can forge.',
+        live: true,
+      },
+      {
+        layer: 'Rupiah on and off ramp',
+        protocol: 'SEP-24 anchor',
+        role: 'Swapping IDR for stablecoin and back again.',
+        live: false,
+      },
+    ],
+  },
+
   faq: {
     title: 'Questions people ask first.',
     items: [
@@ -247,6 +297,15 @@ const id: Copy = {
     language: 'Bahasa',
     openMenu: 'Buka menu',
     closeMenu: 'Tutup menu',
+  },
+
+  wallet: {
+    connect: 'Hubungkan wallet',
+    connecting: 'Menghubungkan…',
+    disconnect: 'Putuskan',
+    connected: 'Tersambung',
+    custody: 'Splitr tidak pernah melihat secret key Anda. Anda tanda tangan di wallet sendiri.',
+    failed: 'Gagal menghubungkan',
   },
 
   hero: {
@@ -394,6 +453,45 @@ const id: Copy = {
           { n: 'OPEN, short N' },
           ', bukan dibulatkan diam-diam.',
         ] as Segment[],
+      },
+    ],
+  },
+
+  stack: {
+    title: 'Tumpukan yang menjalankannya.',
+    lede: 'Lima lapisan. Tiga di antaranya sudah membawa transaksi sungguhan di testnet, dua sisanya masih di depan.',
+    live: 'Jalan di testnet',
+    planned: 'Rencana',
+    layers: [
+      {
+        layer: 'Jaringan dan transaksi',
+        protocol: 'Stellar Core + Horizon',
+        role: 'Kirim dan terima pembayaran, cek saldo, baca riwayat.',
+        live: true,
+      },
+      {
+        layer: 'Aset',
+        protocol: 'Stellar Assets (IDRX)',
+        role: 'Satuan nilai yang dikirim antar orang.',
+        live: true,
+      },
+      {
+        layer: 'Smart contract',
+        protocol: 'Soroban (Rust)',
+        role: 'Logika grup, pembagian, dan siapa yang masih berutang.',
+        live: true,
+      },
+      {
+        layer: 'Bukti on-chain',
+        protocol: 'Transaction hash + ledger',
+        role: 'Bukti lunas yang tidak bisa dipalsukan.',
+        live: true,
+      },
+      {
+        layer: 'On/off-ramp Rupiah',
+        protocol: 'SEP-24 anchor',
+        role: 'Tukar IDR ke stablecoin dan sebaliknya.',
+        live: false,
       },
     ],
   },

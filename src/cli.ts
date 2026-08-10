@@ -4,6 +4,8 @@ import { server } from './stellar.ts';
 import { walletCreate, walletList, walletFund, walletBalance, walletTrust } from './commands/wallet.ts';
 import { assetInit, assetIssue, assetShow } from './commands/asset.ts';
 import { splitCreate, splitList, splitSettle, splitReconcile } from './commands/split.ts';
+import { billCreate, billList, billShow, billSettle, billWatch } from './commands/bill.ts';
+import { describeContractError } from './soroban.ts';
 
 const HELP = `
 splitr — stablecoin bill splitting on Stellar (White Belt slice)
@@ -24,11 +26,25 @@ splitr — stablecoin bill splitting on Stellar (White Belt slice)
   split settle <id> [--member <label>]
   split reconcile <id>             rebuild who-paid-what from the ledger
 
+  bill create --group <name> --payer <label> --amount <n> --members a,b,c
+              [--shares a=2,b=1]   same bill, recorded by the Soroban contract
+  bill list                        every bill the contract holds
+  bill show <id>                   shares and who has paid, read from the contract
+  bill settle <id> --member <l>    transfer and record in one invocation
+  bill watch [--from <ledger>] [--once]
+                                   follow contract events as ledgers close
+
   net                              network, Horizon, live fee stats
+
+Split or bill? \`split\` settles with classic payments and rebuilds the truth from
+Horizon; \`bill\` lets the contract compute the shares and keeps the record and the
+transfer in one atomic move. Same asset, same balances.
 
 Environment:
   SPLITR_PASSPHRASE   unlocks wallet secrets (prompts if unset)
   SPLITR_HORIZON      default https://horizon-testnet.stellar.org
+  SPLITR_RPC          default https://soroban-testnet.stellar.org
+  SPLITR_CONTRACT_ID  override the deployed splitr-split contract
   SPLITR_ASSET_CODE / SPLITR_ASSET_ISSUER   point at an external asset
 `;
 
@@ -103,6 +119,17 @@ async function main(): Promise<void> {
     case 'split reconcile':
       return splitReconcile(rest[0]);
 
+    case 'bill create':
+      return billCreate(flags);
+    case 'bill list':
+      return billList();
+    case 'bill show':
+      return billShow(rest[0]);
+    case 'bill settle':
+      return billSettle(rest[0], flags);
+    case 'bill watch':
+      return billWatch(flags);
+
     case 'net':
     case 'net info':
       return netInfo();
@@ -115,6 +142,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error(`\n${err instanceof Error ? err.message : String(err)}`);
+  // A contract rejection carries its reason inside a page of diagnostic XDR;
+  // everything else passes through untouched.
+  console.error(`\n${describeContractError(err)}`);
   process.exitCode = 1;
 });
