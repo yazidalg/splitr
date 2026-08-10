@@ -1,4 +1,4 @@
-# Splitr — White Belt
+# Splitr
 
 Stablecoin bill splitting on Stellar. This repo is the **White Belt Level 1** slice of the
 [product brief](context/Splitr%20Product%20Idea%20Brief.pdf): build wallets, handle balances,
@@ -84,18 +84,25 @@ ledger value stays canonical in both languages, because that is the string that 
 
 ### Imagery
 
-The one photograph on the page is `web/img/Arisan.jpeg`, imported as a module so Vite hashes and
-emits it. It is a real arisan, which is why it earns its place: rotating savings groups are one of
-the three segments in the PRD, and the bento cell is shaped around the photo's 4:3 frame rather
-than cropping the room out of it. Saturation is pulled to 55% and brightness to 86% in dark mode so
-a warm domestic snapshot sits with the teal palette without being recoloured.
+Four illustrations, drawn in the brand palette and set in Indonesia: an arisan in the bento, and
+one per step of the how-it-works carousel.
 
-Two things to settle before this goes public: the source file is 638x480, which is soft on a
-retina display at the size it renders, so a higher-resolution original is worth swapping in; and
-the faces are identifiable, so it needs permission from the people in it.
+The originals live in `web/img/` at roughly 2750x1536 and 6 MB each. **Those are sources, not
+assets.** What ships is `web/img/opt/*.webp`: resized to 1400px wide and encoded at q82, which
+takes all four from 24 MB to 416 KB with no visible loss at the size they render. Regenerate after
+replacing an original:
 
-Stock was tried first and rejected. A seeded placeholder service returned a pine forest for the
-"friends splitting a bill" tile, which reads worse than an honest gap.
+```bash
+cd web/img
+sips --resampleWidth 1400 name.png --out /tmp/name.png
+cwebp -q 82 -m 6 /tmp/name.png -o opt/name.webp     # brew install webp
+```
+
+Import the `opt/` file, never the PNG. Vite inlines whatever it is given, so importing a source
+would put 6 MB into the bundle.
+
+Stock photography was tried first and rejected: a seeded placeholder service returned a pine forest
+for the "friends splitting a bill" tile, which reads worse than an honest gap.
 
 Two deliberate deviations from the supplied token set, both marked in the file: `--muted-foreground`
 is darkened in light mode (the supplied value measured 3.94:1 on `--background`, under AA for body
@@ -104,14 +111,14 @@ copy), and `--faint` is added as a third text tier for 10–13px metadata. Measu
 
 ## How the White Belt primitives map to the product
 
-| Stellar primitive | Splitr's version |
-|---|---|
-| `Keypair.random()` | onboarding a group member |
-| Friendbot funding | testnet stand-in for an IDR on-ramp |
-| Account balances | "can this member settle their share?" |
-| `changeTrust` | accepting the group's settlement currency |
-| `payment` + memo | **settling one share of a split** |
-| Payment history | proof-of-payment replacing "already transferred 🙏" |
+| Stellar primitive  | Splitr's version                                    |
+| ------------------ | --------------------------------------------------- |
+| `Keypair.random()` | onboarding a group member                           |
+| Friendbot funding  | testnet stand-in for an IDR on-ramp                 |
+| Account balances   | "can this member settle their share?"               |
+| `changeTrust`      | accepting the group's settlement currency           |
+| `payment` + memo   | **settling one share of a split**                   |
+| Payment history    | proof-of-payment replacing "already transferred 🙏" |
 
 ## Design decisions worth knowing
 
