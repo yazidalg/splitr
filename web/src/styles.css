@@ -1,0 +1,327 @@
+@import 'tailwindcss';
+
+@import '@fontsource-variable/space-grotesk';
+@import '@fontsource-variable/plus-jakarta-sans';
+@import '@fontsource-variable/fira-code';
+
+/* Class-based dark mode - the toggle stamps `.dark` on <html>. */
+@custom-variant dark (&:is(.dark *));
+
+/* ================================================================= tokens ==
+   Supplied design system, kept as authored. The only edits are the two font
+   stacks, which now lead with the family names @fontsource actually registers
+   ("… Variable") so the declared families resolve to real files. */
+:root {
+  --card: hsl(170, 40%, 100%);
+  --ring: hsl(171, 100%, 35%);
+  --input: hsl(171, 30%, 88%);
+  --muted: hsl(170, 20%, 94%);
+  --accent: hsl(190, 100%, 94%);
+  --border: hsl(171, 30%, 88%);
+  --radius: 1rem;
+  --chart-1: hsl(171, 100%, 35%);
+  --chart-2: hsl(190, 80%, 45%);
+  --chart-3: hsl(210, 80%, 55%);
+  --chart-4: hsl(150, 60%, 50%);
+  --chart-5: hsl(330, 80%, 65%);
+  --popover: hsl(170, 40%, 100%);
+  --primary: hsl(171, 100%, 35%);
+  --sidebar: hsl(170, 30%, 97%);
+  --spacing: 0.25rem;
+  --font-mono: 'Fira Code Variable', Fira Code, monospace;
+  --font-sans: 'Plus Jakarta Sans Variable', Plus Jakarta Sans, Quicksand, system-ui, sans-serif;
+  --secondary: hsl(185, 80%, 94%);
+  --background: hsl(170, 40%, 98%);
+  --font-serif: Chillax, Playfair Display, serif;
+  --foreground: hsl(180, 40%, 15%);
+  --destructive: hsl(340, 90%, 60%);
+  --shadow-blur: 20px;
+  --shadow-color: hsl(171, 50%, 20%);
+  --sidebar-ring: hsl(171, 100%, 35%);
+  --shadow-spread: -2px;
+  --letter-spacing: -0.02em;
+  --shadow-opacity: 0.08;
+  --sidebar-accent: hsl(185, 60%, 92%);
+  --sidebar-border: hsl(171, 25%, 90%);
+  --card-foreground: hsl(180, 40%, 15%);
+  --shadow-offset-x: 0px;
+  --shadow-offset-y: 8px;
+  --sidebar-primary: hsl(171, 100%, 35%);
+  --muted-foreground: hsl(180, 15%, 45%);
+  --accent-foreground: hsl(190, 100%, 25%);
+  --popover-foreground: hsl(180, 40%, 15%);
+  --primary-foreground: hsl(0, 0%, 100%);
+  --sidebar-foreground: hsl(180, 30%, 25%);
+  --secondary-foreground: hsl(185, 90%, 25%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --sidebar-accent-foreground: hsl(171, 100%, 25%);
+  --sidebar-primary-foreground: hsl(0, 0%, 100%);
+}
+
+/* -------------------------------------------- light extensions & fixes --
+   `:root` and `.dark` have equal specificity, so ordering is what decides:
+   these must sit ABOVE the .dark block or they would leak into dark too. */
+:root {
+  color-scheme: light;
+
+  /* Contrast fix, measured against both grounds this text sits on
+     (--background and --card). The supplied hsl(180,15%,45%) renders at
+     3.94:1 on --background - under AA for body copy. 38% measures 5.26:1 on
+     --background and 5.44:1 on --card. The dark theme measured 9.66:1 and is
+     left exactly as supplied. */
+  --muted-foreground: hsl(180, 15%, 38%);
+
+  /* A third text tier for 10-13px metadata (memo ids, addresses, captions);
+     the supplied set has only two. 42% is the lightest value that still clears
+     4.5:1 on both grounds - 4.58:1 and 4.74:1. */
+  --faint: hsl(180, 12%, 42%);
+
+  /* The set defines sans / serif / mono but no display role. */
+  --font-display: 'Space Grotesk Variable', Space Grotesk, var(--font-sans);
+
+  /* Ambient depth layers, tuned per theme. */
+  --aurora-opacity: 0.1;
+  --grain-opacity: 0.022;
+  --grain-blend: multiply;
+}
+
+.dark {
+  --card: hsl(180, 45%, 7%);
+  --ring: hsl(171, 90%, 50%);
+  --input: hsl(180, 30%, 18%);
+  --muted: hsl(180, 30%, 12%);
+  --accent: hsl(190, 50%, 15%);
+  --border: hsl(180, 30%, 18%);
+  --radius: 1rem;
+  --chart-1: hsl(171, 90%, 50%);
+  --chart-2: hsl(190, 80%, 55%);
+  --chart-3: hsl(210, 80%, 65%);
+  --chart-4: hsl(150, 70%, 55%);
+  --chart-5: hsl(330, 80%, 70%);
+  --popover: hsl(180, 45%, 7%);
+  --primary: hsl(171, 90%, 50%);
+  --sidebar: hsl(180, 50%, 3%);
+  --spacing: 0.25rem;
+  --font-mono: 'Fira Code Variable', Fira Code, monospace;
+  --font-sans: 'Plus Jakarta Sans Variable', Plus Jakarta Sans, Quicksand, system-ui, sans-serif;
+  --secondary: hsl(185, 40%, 15%);
+  --background: hsl(180, 50%, 4%);
+  --font-serif: Chillax, Playfair Display, serif;
+  --foreground: hsl(170, 20%, 96%);
+  --destructive: hsl(340, 80%, 45%);
+  --shadow-blur: 25px;
+  --shadow-color: hsl(0, 0%, 0%);
+  --sidebar-ring: hsl(171, 90%, 50%);
+  --shadow-spread: 0px;
+  --letter-spacing: -0.02em;
+  --shadow-opacity: 0.4;
+  --sidebar-accent: hsl(185, 30%, 12%);
+  --sidebar-border: hsl(180, 30%, 12%);
+  --card-foreground: hsl(170, 20%, 96%);
+  --shadow-offset-x: 0px;
+  --shadow-offset-y: 10px;
+  --sidebar-primary: hsl(171, 90%, 50%);
+  --muted-foreground: hsl(170, 10%, 70%);
+  --accent-foreground: hsl(190, 90%, 90%);
+  --popover-foreground: hsl(170, 20%, 96%);
+  --primary-foreground: hsl(180, 50%, 5%);
+  --sidebar-foreground: hsl(170, 10%, 90%);
+  --secondary-foreground: hsl(185, 90%, 90%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+  --sidebar-accent-foreground: hsl(171, 90%, 95%);
+  --sidebar-primary-foreground: hsl(180, 50%, 5%);
+}
+
+/* --------------------------------------------------- dark extensions -- */
+.dark {
+  color-scheme: dark;
+  --faint: hsl(170, 8%, 55%);
+  --font-display: 'Space Grotesk Variable', Space Grotesk, var(--font-sans);
+  --aurora-opacity: 0.13;
+  --grain-opacity: 0.025;
+  --grain-blend: overlay;
+}
+
+/* ================================================================ mapping ==
+   `inline` keeps the utilities referencing the raw vars above, so every one of
+   them re-resolves under .dark without a second set of utilities. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-faint: var(--faint);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --spacing: var(--spacing);
+
+  --ease-fluid: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes value-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -3px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* ------------------------------------------------------------------ base -- */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    letter-spacing: var(--letter-spacing);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 30%, transparent);
+    color: var(--foreground);
+  }
+
+  :focus-visible {
+    outline: 1px solid var(--ring);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  input[type='number'] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+}
+
+@layer utilities {
+  /* Numbers are data - tabular mono everywhere, and never optically tightened. */
+  .tnum {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+  }
+
+  /* Inner core of the double-bezel. The drop shadow comes straight from the
+     set's shadow tokens, so it is a soft teal lift in light and a near-black
+     one in dark; the inset hairline reads only where it can. */
+  .bezel-core {
+    box-shadow:
+      var(--shadow-offset-x) var(--shadow-offset-y) var(--shadow-blur) var(--shadow-spread)
+        color-mix(in srgb, var(--shadow-color) calc(var(--shadow-opacity) * 100%), transparent),
+      inset 0 1px 0 color-mix(in srgb, var(--foreground) 7%, transparent);
+  }
+
+  /* ---- ambient depth (see Shell.tsx) ----
+     Fixed and pointer-events-none at the call site: blur and noise over a
+     scrolling container repaint every frame. */
+  .aurora-primary {
+    background: radial-gradient(circle, var(--primary) 0%, transparent 62%);
+    opacity: var(--aurora-opacity);
+  }
+
+  .grain {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: var(--grain-opacity);
+    mix-blend-mode: var(--grain-blend);
+  }
+
+  /* Scroll-entry state: transform/opacity/filter only, nothing that lays out. */
+  .reveal {
+    opacity: 0;
+    transform: translate3d(0, 2.5rem, 0);
+    filter: blur(6px);
+    transition:
+      opacity 900ms var(--ease-fluid),
+      transform 900ms var(--ease-fluid),
+      filter 900ms var(--ease-fluid);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+
+  .reveal[data-shown='true'] {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    filter: blur(0);
+  }
+
+  /* Replayed by remounting the span on every new value - a recalculated
+     number should register as having changed. */
+  .value-in {
+    animation: value-in 300ms var(--ease-fluid) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .reveal,
+  .reveal[data-shown='true'] {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    transition: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

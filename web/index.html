@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Stamps the theme class before first paint. Blocking on purpose: any
+         async alternative shows a frame of the wrong theme. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('splitr-theme');
+          var dark = stored
+            ? stored === 'dark'
+            : window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.classList.toggle('dark', dark);
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+    <title>Splitr: who owes what, and proof they've paid</title>
+    <meta
+      name="description"
+      content="Splitr turns a messy group bill into one settled ledger. Split in seconds, chase no one, and let the Stellar ledger, not a screenshot, say who's square."
+    />
+    <meta name="theme-color" content="hsl(170, 40%, 98%)" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="hsl(180, 50%, 4%)" media="(prefers-color-scheme: dark)" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Splitr: who owes what, and proof they've paid" />
+    <meta
+      property="og:description"
+      content="Group bills settled in stablecoin on Stellar. Every payment carries its own memo, so the ledger says who's paid."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2307080A'/%3E%3Cpath d='M8 12h16M8 20h16' stroke='%232DD4BF' stroke-width='2.5' stroke-linecap='round'/%3E%3Ccircle cx='13' cy='12' r='3' fill='%2307080A' stroke='%232DD4BF' stroke-width='2.5'/%3E%3Ccircle cx='19' cy='20' r='3' fill='%2307080A' stroke='%232DD4BF' stroke-width='2.5'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
