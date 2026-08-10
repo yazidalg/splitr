@@ -82,6 +82,18 @@ dots and decimals with a comma in Indonesian, and the hero headline gets a lower
 because the same sentence runs longer and the headline has a hard two-line budget. The 7-decimal
 ledger value stays canonical in both languages, because that is the string that goes on chain.
 
+### The how-it-works carousel
+
+`web/src/sections/HowItWorks.tsx` puts the three steps on a real horizontal track rather than
+crossfading them in place. A track gets the direction right for free: advancing pushes the outgoing
+slide left and pulls the incoming one in from the right, going back reverses it, and there is no
+direction state to get wrong. It also holds the height of its tallest slide, so nothing jumps.
+
+Two motions, both doing a job. The 650ms slide says which way you moved. The two comparison cards
+then rise with a 260ms and 360ms delay, so the claim lands after the picture has settled rather
+than competing with it. Off-screen slides carry `inert`, so nothing hidden is reachable by keyboard.
+The global `prefers-reduced-motion` block in `styles.css` collapses all of it to an instant cut.
+
 ### Imagery
 
 Four illustrations, drawn in the brand palette and set in Indonesia: an arisan in the bento, and
