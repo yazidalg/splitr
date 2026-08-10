@@ -98,7 +98,15 @@ type WalletValue = {
   connecting: boolean;
   /** Set when the last attempt failed; cleared on the next one. */
   error: string | null;
-  connect: () => Promise<void>;
+  /**
+   * Opens the wallet chooser and resolves with the account picked, or null if
+   * the modal was dismissed or the attempt failed.
+   *
+   * It returns the address rather than leaving callers to read `address` back,
+   * because the state this sets is not visible in the closure that awaited it —
+   * and the landing page's CTA has to know whether to move to /app.
+   */
+  connect: () => Promise<string | null>;
   disconnect: () => Promise<void>;
   /**
    * Signs an unsigned transaction envelope. Shaped to match what
@@ -140,7 +148,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const connect = useCallback(async () => {
+  const connect = useCallback<WalletValue['connect']>(async () => {
     setConnecting(true);
     setError(null);
     try {
@@ -152,10 +160,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       } catch {
         // Choice still applies for this visit.
       }
+      return chosen;
     } catch (err) {
       // Closing the modal rejects too; that is a decision, not a failure.
       const message = err instanceof Error ? err.message : String(err);
       if (!/clos|cancel|reject|dismiss/i.test(message)) setError(message);
+      return null;
     } finally {
       setConnecting(false);
     }

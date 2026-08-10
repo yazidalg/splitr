@@ -21,7 +21,9 @@ export function FinalCta() {
           </p>
 
           <div className="mt-9 flex justify-center">
-            {/* Same label as the hero and nav: one label per intent. */}
+            {/* Still the calculator, not the wallet. The hero and nav now ask
+                for a wallet; this one closes the page by inviting a try, and
+                the demo needs nothing installed to answer. */}
             <Cta href="#demo" icon={<ArrowRight />}>
               {t.hero.primary}
             </Cta>

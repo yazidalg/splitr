@@ -2,3 +2,4 @@ node_modules/
 .splitr/
 *.log
 web/dist/
+*.DS_Store

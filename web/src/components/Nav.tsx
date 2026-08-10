@@ -5,16 +5,20 @@ import { LangToggle } from './LangToggle.tsx';
 import { ThemeToggle } from './ThemeToggle.tsx';
 import { useLang } from '../lib/i18n.tsx';
 import { navigate, useRoute } from '../lib/useRoute.ts';
+import { useWalletCta } from '../lib/useWalletCta.ts';
 
 export function Nav() {
   const { t } = useLang();
   const route = useRoute();
+  const cta = useWalletCta();
   const [open, setOpen] = useState(false);
 
   // The anchor links only mean anything on the landing page; from /app they
   // would scroll to nothing.
   // On /app the logo is already the way back, so a second link saying so is
   // just noise beside it.
+  // No '/app' link: the wallet CTA below is the way in, and a bare link beside
+  // it offered the same destination without the wallet you need once you land.
   const links =
     route === 'app'
       ? []
@@ -22,7 +26,6 @@ export function Nav() {
           { href: '#how', label: t.nav.how },
           { href: '#proof', label: t.nav.proof },
           { href: '#faq', label: t.nav.faq },
-          { href: '/app', label: t.nav.app },
         ];
 
   /** Same-origin paths route client-side; hashes stay plain anchors. */
@@ -80,22 +83,27 @@ export function Nav() {
           <LangToggle className="ml-auto" />
           <ThemeToggle />
 
-          {/* One trailing action, never both. There is nothing to sign on the
-              landing page, and `#demo` does not exist on /app — carrying both
-              overflowed the pill and left a link pointing at nothing.
+          {/* One trailing action, never both — carrying two overflowed the pill.
+              Both connect a wallet; they differ in what that means where you
+              are. On /app it is the account you sign with, so ConnectWallet
+              shows which one. On the landing page it is the door, so it is
+              styled as the primary action and moves you through on success.
               ConnectWallet is not given a `hidden` class here: it sets its own
               `inline-flex`, and Tailwind picks between competing display
               utilities by stylesheet order, so the class would be ignored. */}
           {route === 'app' ? (
             <ConnectWallet />
           ) : (
-            <a
-              href="#demo"
-              className="hidden items-center gap-2 rounded-full bg-primary px-4 py-2 text-[13px] font-medium whitespace-nowrap text-primary-foreground transition-transform duration-500 ease-fluid active:scale-[0.97] sm:inline-flex"
+            <button
+              type="button"
+              onClick={cta.onClick}
+              disabled={cta.busy}
+              title={cta.title}
+              className="hidden items-center gap-2 rounded-full bg-primary px-4 py-2 text-[13px] font-medium whitespace-nowrap text-primary-foreground transition-transform duration-500 ease-fluid active:scale-[0.97] disabled:opacity-60 sm:inline-flex"
             >
-              {t.hero.primary}
+              {cta.label}
               <ArrowRight size={14} />
-            </a>
+            </button>
           )}
 
           {/* /app has no nav links and its wallet control sits in the pill at
@@ -140,6 +148,30 @@ export function Nav() {
               </a>
             </li>
           ))}
+
+          {/* The pill's own CTA is `sm:inline-flex`, so without this the only
+              way into /app on a phone would be typing the URL. */}
+          <li
+            className="mt-4 overflow-hidden transition-all duration-700 ease-fluid"
+            style={{
+              transitionDelay: open ? `${120 + links.length * 70}ms` : '0ms',
+              transform: open ? 'translateY(0)' : 'translateY(2rem)',
+              opacity: open ? 1 : 0,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                cta.onClick();
+              }}
+              disabled={cta.busy}
+              className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground transition-transform duration-500 ease-fluid active:scale-[0.97] disabled:opacity-60"
+            >
+              {cta.label}
+              <ArrowRight size={16} />
+            </button>
+          </li>
         </ul>
       </div>
     </>

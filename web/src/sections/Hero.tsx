@@ -2,6 +2,7 @@ import { Cta } from '../components/Cta.tsx';
 import { ArrowRight } from '../components/Icons.tsx';
 import { Reveal } from '../components/Reveal.tsx';
 import { useLang } from '../lib/i18n.tsx';
+import { useWalletCta } from '../lib/useWalletCta.ts';
 import { SplitDemo } from './SplitDemo.tsx';
 
 /**
@@ -10,6 +11,7 @@ import { SplitDemo } from './SplitDemo.tsx';
  */
 export function Hero() {
   const { lang, t } = useLang();
+  const cta = useWalletCta();
 
   // The <br> fixes two lines, so each half has to fit its column on one line at
   // every desktop width. Indonesian runs longer for the same sentence, so it
@@ -40,8 +42,8 @@ export function Hero() {
             </p>
 
             <div className="mt-9 flex flex-wrap items-center gap-3">
-              <Cta href="#demo" icon={<ArrowRight />}>
-                {t.hero.primary}
+              <Cta icon={<ArrowRight />} onClick={cta.onClick} disabled={cta.busy} title={cta.title}>
+                {cta.label}
               </Cta>
               <Cta href="#how" variant="ghost">
                 {t.hero.secondary}

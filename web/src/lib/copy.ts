@@ -25,7 +25,6 @@ const en = {
     how: 'How it works',
     proof: 'Under the hood',
     faq: 'FAQ',
-    app: 'App',
   },
 
   a11y: {
@@ -41,6 +40,9 @@ const en = {
     connecting: 'Connecting…',
     disconnect: 'Disconnect',
     connected: 'Connected',
+    // What the connect CTA says once a wallet is already attached — a returning
+    // visitor has theirs restored before they ever click.
+    openApp: 'Open app',
     // Said once, near the button, because it is the question people actually
     // have before clicking it.
     custody: 'Splitr never sees your secret key. You sign in your own wallet.',
@@ -331,7 +333,6 @@ const id: Copy = {
     how: 'Cara kerja',
     proof: 'Di balik layar',
     faq: 'Tanya jawab',
-    app: 'Aplikasi',
   },
 
   a11y: {
@@ -347,6 +348,7 @@ const id: Copy = {
     connecting: 'Menghubungkan…',
     disconnect: 'Putuskan',
     connected: 'Tersambung',
+    openApp: 'Buka aplikasi',
     custody: 'Splitr tidak pernah melihat secret key Anda. Anda tanda tangan di wallet sendiri.',
     failed: 'Gagal menghubungkan',
   },
