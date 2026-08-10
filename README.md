@@ -1,8 +1,10 @@
 # Splitr
 
-Stablecoin bill splitting on Stellar. This repo is the **White Belt Level 1** slice of the
-[product brief](context/Splitr%20Product%20Idea%20Brief.pdf): build wallets, handle balances,
-submit real on-chain transactions.
+Stablecoin bill splitting on Stellar. This repo covers **White Belt (Level 1)** through
+**Green Belt (Level 4)** of the [product brief](context/Splitr%20Product%20Idea%20Brief.pdf):
+wallets and real on-chain transactions, then a Soroban contract with multi-wallet browser
+signing and live event synchronisation, a working mini dApp at `/app`, and members who
+onboard holding no XLM at all.
 
 It is not a throwaway demo — it is the settlement substrate every later belt sits on. The
 brief's core promise ("ending disputes over who has paid") is implemented literally:
@@ -37,6 +39,61 @@ node src/cli.ts split reconcile <id>
 Verified end-to-end on testnet: a 300,000 IDRX dinner split three ways, settled by two real
 payments, reconciled from ledger history. Balances cross-check exactly against every transfer.
 
+## The contract (Yellow Belt)
+
+`soroban/contracts/splitr-split` is the same bill, recorded on-chain. Deployed to testnet at
+[`CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD`](https://stellar.expert/explorer/testnet/contract/CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD).
+
+```bash
+npm run contract:test          # 16 tests
+npm run contract:build         # 12.5 KB wasm, 7 exported functions
+node src/cli.ts bill create --group "Nasi Padang" --payer alice \
+  --amount 300000 --members alice,bob,citra
+node src/cli.ts bill settle 1 --member bob            # or --amount 10000 for part of it
+node src/cli.ts bill mine bob                        # bills this member is on
+node src/cli.ts bill show 1
+node src/cli.ts bill watch      # follow contract events as ledgers close
+```
+
+`cargo` must be on your PATH for the contract scripts. With Homebrew's rustup it is not by
+default — the shims live in `$(brew --prefix rustup)/bin`.
+
+**Why both `split` and `bill`.** `split` settles with classic payments and rebuilds the truth
+afterwards by replaying Horizon; it needs no contract and works with any wallet on the network.
+`bill` hands the arithmetic to the contract, which computes the shares itself and moves the asset
+inside the same invocation that records the payment. There is nothing to reconcile because
+nothing can disagree. The contract settles through the asset's Stellar Asset Contract, so both
+paths move the same IDRX: after two members settled bill #1 on-chain, `wallet balance` showed
+alice up exactly 200,000 and the two payers down exactly 100,000 each.
+
+The splitting algorithm exists twice — `splitByWeights` in `src/money.ts` and
+`split_by_weights` in `lib.rs` — and `test::agrees_with_money_ts` pins the cases both must
+produce, tie-break included. Changing one without the other is the easiest way to break this repo.
+
+### Two things the dApp needed from the contract
+
+**`bills_for(address)`.** Without an index of which bills an address is on, "my bills" means
+reading every bill in the contract and filtering client-side — one round trip per bill, every
+time anyone opens the app. `create_bill` now appends the id to each member's list.
+
+**`settle_part(id, member, amount)`.** Paying half now and half later is the ordinary case, not
+an edge case; `owes`/`paid` always supported it and only `settle` insisted on closing the whole
+gap at once. `settle` now delegates to it, and a test asserts both paths refuse for the same
+reasons so the same mistake cannot report two different errors. Overpayment is refused rather
+than clamped, because silently taking less than asked for makes the returned amount disagree
+with what the caller meant.
+
+### Events
+
+The contract publishes `Created` and `Settled` through `#[contractevent]`, which puts them in
+the contract's SEP-48 spec. That is what lets `bill watch` decode them with
+`spec.parseEvent` — field names come from the deployed wasm, not from a copy of them kept in
+TypeScript. `id` is an indexed topic, so an indexer can follow one bill.
+
+Soroban RPC has no subscription, so `watch` polls `getEvents` on a cursor at the testnet ledger
+cadence of five seconds. The cursor makes it resumable and lossless across restarts, and a failed
+poll backs off and retries from the same cursor rather than killing the watcher.
+
 ## Landing page
 
 `web/` is the marketing site — a Vite + React + Tailwind single page, built from the PRD in
@@ -55,6 +112,20 @@ because it is the CLI's code.
 
 The root `tsconfig.json` still covers only `src/**/*.ts`; the web app has its own under `web/`, so
 `npm run typecheck` checks exactly what it always did.
+
+### Connecting a wallet
+
+The CLI holds keys. The page does not and must not — custody is this project's unresolved
+regulatory exposure, and a site that asks for a secret key is the wrong answer to it. Visitors
+bring their own wallet through [Stellar Wallets Kit](https://github.com/Creit-Tech/Stellar-Wallets-Kit):
+Freighter, xBull, Albedo, Lobstr, Hana, Rabet. "Install Freighter" is a real drop-off for someone
+who already uses Lobstr on their phone.
+
+The kit and its modules are 209 KB — 73% on top of everything else the page ships — so they are
+behind a dynamic import. A visitor who reads the page and never connects downloads none of it;
+the main bundle carries about 2.5 KB of wallet code. The choice is remembered in
+`localStorage['splitr-wallet']` and restored with `getAddress`, which reads the kit's memory
+rather than prompting, so returning without an authorised origin raises no popup.
 
 ### Theming
 
@@ -81,6 +152,19 @@ Two things follow from the language and are handled in `web/src/lib/split.ts`: t
 dots and decimals with a comma in Indonesian, and the hero headline gets a lower size ceiling
 because the same sentence runs longer and the headline has a hard two-line budget. The 7-decimal
 ledger value stays canonical in both languages, because that is the string that goes on chain.
+
+### The protocol stack section
+
+`web/src/sections/Stack.tsx` maps the five Stellar layers to their role in Splitr. It is drawn as a
+stack rather than set as a table, because the one thing worth seeing is how much of it actually
+runs: a live layer gets a filled card, a solid rail and a solid border, a planned one gets a dashed
+outline and no fill.
+
+Four of the five are live, and the section says so. The CLI calls Horizon, `Asset`, `Memo` and
+`payment`, and since Yellow Belt it also calls a deployed Soroban contract through
+`src/soroban.ts`, so the smart-contract layer is marked live. Only the SEP-24 ramp is still
+planned, and it stays planned until a real IDR anchor exists. The asset layer names IDRX rather
+than USDC because IDRX is what this repo actually issues.
 
 ### The how-it-works carousel
 
@@ -121,6 +205,65 @@ is darkened in light mode (the supplied value measured 3.94:1 on `--background`,
 copy), and `--faint` is added as a third text tier for 10–13px metadata. Measured ratios are
 4.58–5.44:1 in light and 5.68–9.66:1 in dark.
 
+## The app (Orange Belt)
+
+`/app` is the dApp: connect a wallet, record a bill, pay a share or part of one, and watch the
+contract as ledgers close. Same contract as the CLI, same asset, same balances — the difference
+is only who holds the key.
+
+```bash
+npm run web:dev     # http://localhost:5173/app
+```
+
+Two pages, so `web/src/lib/useRoute.ts` is two lines of routing rather than a router. Path-based
+rather than hash-based, because the landing page already uses `#how`, `#demo` and `#faq` to
+scroll and a hash router would fight them for the same slot. The cost is that a static host has
+to rewrite unknown paths to `index.html`; `web/public/_redirects` does that for Netlify, and
+Vite's dev server does it already.
+
+Everything the app needs — `@stellar/stellar-sdk` and the wallet kit — is behind a dynamic
+import, because the SDK alone is larger than the whole landing page. The entry chunk is 288 KB
+and a visitor who only reads the marketing copy downloads none of the chain code. Check it after
+touching the app: `npm run web:build` should keep `index-*.js` near that number, with `utils-*`
+(the SDK) and `client-*` as separate chunks.
+
+## Arriving with nothing (Green Belt)
+
+Stellar charges every account a reserve: 1 XLM to exist, 0.5 more per trustline. That was this
+project's largest practical obstacle, and the earlier README said so — a treasurer cannot tell
+four friends to go buy XLM before anyone can be paid back in Rupiah.
+
+```bash
+node src/cli.ts wallet onboard dina --sponsor issuer
+node src/cli.ts split settle <id> --member dina --fee-source issuer
+```
+
+`wallet onboard` creates the account and its trustline inside a
+`beginSponsoringFutureReserves` / `endSponsoringFutureReserves` sandwich, which is the only way
+`createAccount` may start at zero. All four operations ride in one transaction because they are
+one decision, and it carries two signatures: the sponsor's, and the sponsored account's, because
+Stellar requires the sponsored party to agree to both ends of the sandwich.
+
+That gets a member on-chain, but not transacting — a zero-XLM account still cannot pay a fee.
+`--fee-source` wraps the settlement in a **fee-bump**, so someone else bids the fee while the
+payment itself is still signed by, and debited from, the member.
+
+Verified on testnet. `dina` was onboarded, received 50,000 IDRX, and settled a 20,000 share:
+
+```
+dina: SKIPPED — Transaction rejected: tx_insufficient_balance   # without --fee-source
+dina → alice  20,000 IDRX                                        # with it
+```
+
+Her XLM balance before and after both read `0`. Horizon reports `num_sponsored: 3` against her
+account and names the issuer as sponsor of both the account and the trustline.
+
+**A reserve bug this surfaced.** `snapshot()` computed the minimum balance as
+`(2 + subentries) * baseReserve`, which ignores sponsorship. It told a member holding zero XLM
+that their floor was 1.5 — the exact thing sponsorship removes — and understated the sponsor's.
+The formula is `(2 + subentries + numSponsoring - numSponsored) * baseReserve`; `dina` now reads
+a floor of 0 and the issuer 2.5.
+
 ## How the White Belt primitives map to the product
 
 | Stellar primitive  | Splitr's version                                    |
@@ -158,11 +301,17 @@ run it twice and the second run pays nothing. Partial payments show as `OPEN …
 
 ## Carried forward to the next belts
 
-- **Reserves are the onboarding wall.** Each member needs ~1.5 XLM before touching a Rupiah.
-  Real users won't buy XLM first — Green Belt should sponsor accounts
-  (`beginSponsoringFutureReserves`) and pay fees via fee-bump so members arrive holding zero XLM.
-- **Custody is unspecified in the brief.** Splitr currently holds keys. Non-custodial
-  (Freighter / passkey smart wallets) changes the Indonesian regulatory exposure — decide before
-  Blue Belt's 50 users.
+- ~~**Reserves are the onboarding wall.**~~ Done at Green Belt: `wallet onboard` sponsors the
+  account and its trustline, and `--fee-source` fee-bumps the settlement, so a member arrives and
+  transacts holding zero XLM.
+- ~~**Custody is unspecified in the brief.**~~ Settled at Yellow Belt for the web: the page is
+  non-custodial through Stellar Wallets Kit and never sees a secret key. The CLI still holds keys,
+  which is correct for an operator tool and wrong for anything a member touches.
+- **The dApp cannot yet fee-bump.** `--fee-source` covers the classic path only; a sponsored
+  member using `/app` still needs XLM to call the contract. Soroban fee-bumps work, but
+  `AssembledTransaction.signAndSend` submits the inner transaction itself, so this needs the
+  envelope built by hand.
+- **Sponsorship is never revoked.** Nothing calls `revokeSponsorship`, so a sponsor's reserve is
+  locked for as long as the member exists. Fine at four members, not at Blue Belt's fifty.
 - **Black Belt's 20+ mainnet users are gated on a real IDR anchor**, which the brief defers to
-  "future." That is the project's largest unstated risk.
+  "future." That remains the project's largest unstated risk.

@@ -25,6 +25,7 @@ const en = {
     how: 'How it works',
     proof: 'Under the hood',
     faq: 'FAQ',
+    app: 'App',
   },
 
   a11y: {
@@ -33,6 +34,43 @@ const en = {
     language: 'Language',
     openMenu: 'Open menu',
     closeMenu: 'Close menu',
+  },
+
+  wallet: {
+    connect: 'Connect wallet',
+    connecting: 'Connecting…',
+    disconnect: 'Disconnect',
+    connected: 'Connected',
+    // Said once, near the button, because it is the question people actually
+    // have before clicking it.
+    custody: 'Splitr never sees your secret key. You sign in your own wallet.',
+    failed: 'Could not connect',
+  },
+
+  app: {
+    title: 'Your bills',
+    lede: 'Real bills on the deployed contract. The contract computes every share and moves the money in the same call that records it — nothing here is a mock.',
+    connectFirst: 'Connect a wallet to see the bills you are on.',
+    newBill: 'New bill',
+    group: 'What was it',
+    total: 'Total',
+    members: 'Everyone who was in on it',
+    membersHint: 'Stellar addresses, separated by commas. You are added automatically as the payer.',
+    createBill: 'Record the bill',
+    signing: 'Sign in your wallet…',
+    yourBills: 'Bills you are on',
+    loading: 'Reading the contract…',
+    noBills: 'Nothing yet. Record one above.',
+    you: 'you',
+    outstanding: 'Outstanding',
+    settledInFull: 'Settled in full.',
+    payShare: 'Pay',
+    payPart: 'Pay part',
+    partAmount: 'Amount',
+    liveFeed: 'Live from the contract',
+    liveFeedNote: 'Events as ledgers close, roughly every five seconds. Someone else settling shows up here without a refresh.',
+    evCreated: 'created',
+    evSettled: 'settled',
   },
 
   hero: {
@@ -184,6 +222,45 @@ const en = {
     ],
   },
 
+  stack: {
+    title: 'The stack it runs on.',
+    lede: 'Five layers. Three of them already carry real transactions on testnet, and two are still ahead.',
+    live: 'Live on testnet',
+    planned: 'Planned',
+    layers: [
+      {
+        layer: 'Network and transactions',
+        protocol: 'Stellar Core + Horizon',
+        role: 'Sends and receives payments, checks balances, and reads history.',
+        live: true,
+      },
+      {
+        layer: 'Asset',
+        protocol: 'Stellar Assets (IDRX)',
+        role: 'The unit of value that moves between people.',
+        live: true,
+      },
+      {
+        layer: 'Smart contract',
+        protocol: 'Soroban (Rust)',
+        role: 'Group logic, splitting, and who still owes what.',
+        live: true,
+      },
+      {
+        layer: 'On-chain proof',
+        protocol: 'Transaction hash + ledger',
+        role: 'The receipt that says paid, and that nobody can forge.',
+        live: true,
+      },
+      {
+        layer: 'Rupiah on and off ramp',
+        protocol: 'SEP-24 anchor',
+        role: 'Swapping IDR for stablecoin and back again.',
+        live: false,
+      },
+    ],
+  },
+
   faq: {
     title: 'Questions people ask first.',
     items: [
@@ -239,6 +316,7 @@ const id: Copy = {
     how: 'Cara kerja',
     proof: 'Di balik layar',
     faq: 'Tanya jawab',
+    app: 'Aplikasi',
   },
 
   a11y: {
@@ -247,6 +325,41 @@ const id: Copy = {
     language: 'Bahasa',
     openMenu: 'Buka menu',
     closeMenu: 'Tutup menu',
+  },
+
+  wallet: {
+    connect: 'Hubungkan wallet',
+    connecting: 'Menghubungkan…',
+    disconnect: 'Putuskan',
+    connected: 'Tersambung',
+    custody: 'Splitr tidak pernah melihat secret key Anda. Anda tanda tangan di wallet sendiri.',
+    failed: 'Gagal menghubungkan',
+  },
+
+  app: {
+    title: 'Tagihan Anda',
+    lede: 'Tagihan sungguhan di contract yang sudah live. Contract yang menghitung setiap bagian dan memindahkan uangnya di panggilan yang sama saat mencatatnya — tidak ada yang mock di sini.',
+    connectFirst: 'Hubungkan wallet untuk melihat tagihan yang melibatkan Anda.',
+    newBill: 'Tagihan baru',
+    group: 'Untuk apa',
+    total: 'Total',
+    members: 'Siapa saja yang ikut',
+    membersHint: 'Alamat Stellar, pisahkan dengan koma. Anda otomatis masuk sebagai yang nalangin.',
+    createBill: 'Catat tagihannya',
+    signing: 'Tanda tangan di wallet…',
+    yourBills: 'Tagihan yang melibatkan Anda',
+    loading: 'Membaca contract…',
+    noBills: 'Belum ada. Catat satu di atas.',
+    you: 'Anda',
+    outstanding: 'Belum lunas',
+    settledInFull: 'Lunas semua.',
+    payShare: 'Bayar',
+    payPart: 'Bayar sebagian',
+    partAmount: 'Jumlah',
+    liveFeed: 'Langsung dari contract',
+    liveFeedNote: 'Event tiap ledger ditutup, kira-kira lima detik sekali. Orang lain yang bayar langsung muncul di sini tanpa refresh.',
+    evCreated: 'dibuat',
+    evSettled: 'dibayar',
   },
 
   hero: {
@@ -394,6 +507,45 @@ const id: Copy = {
           { n: 'OPEN, short N' },
           ', bukan dibulatkan diam-diam.',
         ] as Segment[],
+      },
+    ],
+  },
+
+  stack: {
+    title: 'Tumpukan yang menjalankannya.',
+    lede: 'Lima lapisan. Tiga di antaranya sudah membawa transaksi sungguhan di testnet, dua sisanya masih di depan.',
+    live: 'Jalan di testnet',
+    planned: 'Rencana',
+    layers: [
+      {
+        layer: 'Jaringan dan transaksi',
+        protocol: 'Stellar Core + Horizon',
+        role: 'Kirim dan terima pembayaran, cek saldo, baca riwayat.',
+        live: true,
+      },
+      {
+        layer: 'Aset',
+        protocol: 'Stellar Assets (IDRX)',
+        role: 'Satuan nilai yang dikirim antar orang.',
+        live: true,
+      },
+      {
+        layer: 'Smart contract',
+        protocol: 'Soroban (Rust)',
+        role: 'Logika grup, pembagian, dan siapa yang masih berutang.',
+        live: true,
+      },
+      {
+        layer: 'Bukti on-chain',
+        protocol: 'Transaction hash + ledger',
+        role: 'Bukti lunas yang tidak bisa dipalsukan.',
+        live: true,
+      },
+      {
+        layer: 'On/off-ramp Rupiah',
+        protocol: 'SEP-24 anchor',
+        role: 'Tukar IDR ke stablecoin dan sebaliknya.',
+        live: false,
       },
     ],
   },

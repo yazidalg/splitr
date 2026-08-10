@@ -1,0 +1,17 @@
+{
+  "//": "Deployed contract addresses, by network. Testnet ids are public information and belong in the repo: without them a fresh clone cannot talk to the contract this project actually runs against. Override at runtime with SPLITR_CONTRACT_ID.",
+  "testnet": {
+    "splitr-split": {
+      "contractId": "CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD",
+      "wasmHash": "c96ac11348362039a1e7f0258f7a7e981d5eed15f82353dbc3afbf4f1560081a",
+      "deployer": "GALAQYCF2AASNH54OAYU2JMFTHXZTB4IBKXZPQ6T2RSQD35VODOX5KOP",
+      "deployedAt": "2026-08-10"
+    },
+    "idrx-sac": {
+      "//": "Stellar Asset Contract for the IDRX classic asset. The contract settles through this, so the same balance backs both the classic payments the CLI makes and the contract transfers.",
+      "contractId": "CDGV6KHURXJXLMIPPI7VCSVQTLAGANUIWMF7WHPVFKH2MJFCUZ3YCTSD",
+      "asset": "IDRX:GCORFTFDK2KBHKHNLUYNALR4RT7BVZ6GCQJPKOMINH5FIDDT2VEJQZCO",
+      "deployedAt": "2026-08-10"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# The three gates that exist locally, run on every push. There is no lint config
+# and no JS test runner, so these typechecks plus cargo test are the whole net.
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run web:typecheck
+      # Catches a static import of the SDK or the wallet kit creeping into the
+      # landing page, which no typecheck would notice.
+      - run: npm run web:build
+      - name: Entry chunk stays lean
+        run: |
+          entry=$(ls -1 web/dist/assets/index-*.js | head -1)
+          size=$(wc -c < "$entry")
+          echo "$entry is $size bytes"
+          # 288 KB today. The ceiling is deliberately close: the chain client and
+          # the wallet kit are lazily loaded, and this fails if one stops being.
+          if [ "$size" -gt 340000 ]; then
+            echo "::error::Entry chunk is $size bytes, over the 340000 ceiling."
+            echo "Something that should be lazy is now in the main bundle."
+            exit 1
+          fi
+
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: soroban
+      - run: cargo test
+        working-directory: soroban
+      - run: cargo fmt --all --check
+        working-directory: soroban

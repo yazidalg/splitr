@@ -1,9 +1,18 @@
 #!/usr/bin/env node
 import { HORIZON_URL, NETWORK_PASSPHRASE } from './config.ts';
 import { server } from './stellar.ts';
-import { walletCreate, walletList, walletFund, walletBalance, walletTrust } from './commands/wallet.ts';
+import {
+  walletCreate,
+  walletList,
+  walletFund,
+  walletBalance,
+  walletTrust,
+  walletOnboard,
+} from './commands/wallet.ts';
 import { assetInit, assetIssue, assetShow } from './commands/asset.ts';
 import { splitCreate, splitList, splitSettle, splitReconcile } from './commands/split.ts';
+import { billCreate, billList, billMine, billShow, billSettle, billWatch } from './commands/bill.ts';
+import { describeContractError } from './soroban.ts';
 
 const HELP = `
 splitr — stablecoin bill splitting on Stellar (White Belt slice)
@@ -13,6 +22,9 @@ splitr — stablecoin bill splitting on Stellar (White Belt slice)
   wallet list                      all wallets with their on-chain state
   wallet balance [<label>|--all]   balances, reserve floor, spendable XLM
   wallet trust <label>             open a trustline to the settlement asset
+  wallet onboard <label> [--sponsor <label>]
+                                   create the account AND its trustline with
+                                   sponsored reserves — the member holds 0 XLM
 
   asset init [--code IDRX]         stand up the settlement asset + issuer
   asset issue --to <label> --amount <n>
@@ -21,14 +33,31 @@ splitr — stablecoin bill splitting on Stellar (White Belt slice)
   split create --group <name> --payer <label> --amount <n> --members a,b,c
                [--shares a=2,b=1] [--note "..."]
   split list
-  split settle <id> [--member <label>]
+  split settle <id> [--member <label>] [--fee-source <label>]
   split reconcile <id>             rebuild who-paid-what from the ledger
 
+  bill create --group <name> --payer <label> --amount <n> --members a,b,c
+              [--shares a=2,b=1]   same bill, recorded by the Soroban contract
+  bill list                        every bill the contract holds
+  bill mine <label>                just the bills this member is on
+  bill show <id>                   shares and who has paid, read from the contract
+  bill settle <id> --member <l> [--amount <n>]
+                                   transfer and record in one invocation;
+                                   --amount pays part of a share
+  bill watch [--from <ledger>] [--once]
+                                   follow contract events as ledgers close
+
   net                              network, Horizon, live fee stats
+
+Split or bill? \`split\` settles with classic payments and rebuilds the truth from
+Horizon; \`bill\` lets the contract compute the shares and keeps the record and the
+transfer in one atomic move. Same asset, same balances.
 
 Environment:
   SPLITR_PASSPHRASE   unlocks wallet secrets (prompts if unset)
   SPLITR_HORIZON      default https://horizon-testnet.stellar.org
+  SPLITR_RPC          default https://soroban-testnet.stellar.org
+  SPLITR_CONTRACT_ID  override the deployed splitr-split contract
   SPLITR_ASSET_CODE / SPLITR_ASSET_ISSUER   point at an external asset
 `;
 
@@ -86,6 +115,8 @@ async function main(): Promise<void> {
       return walletBalance(rest[0] ?? (flags.all ? '--all' : ''));
     case 'wallet trust':
       return walletTrust(rest[0]);
+    case 'wallet onboard':
+      return walletOnboard(rest[0], flags);
 
     case 'asset init':
       return assetInit(flags);
@@ -103,6 +134,19 @@ async function main(): Promise<void> {
     case 'split reconcile':
       return splitReconcile(rest[0]);
 
+    case 'bill create':
+      return billCreate(flags);
+    case 'bill list':
+      return billList();
+    case 'bill mine':
+      return billMine(rest[0]);
+    case 'bill show':
+      return billShow(rest[0]);
+    case 'bill settle':
+      return billSettle(rest[0], flags);
+    case 'bill watch':
+      return billWatch(flags);
+
     case 'net':
     case 'net info':
       return netInfo();
@@ -115,6 +159,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error(`\n${err instanceof Error ? err.message : String(err)}`);
+  // A contract rejection carries its reason inside a page of diagnostic XDR;
+  // everything else passes through untouched.
+  console.error(`\n${describeContractError(err)}`);
   process.exitCode = 1;
 });
