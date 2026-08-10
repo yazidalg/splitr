@@ -1,0 +1,7 @@
+# 24 MB of illustration sources. Only web/img/opt/*.webp is imported by the
+# build, so the originals are pure upload weight on every deploy.
+web/img/*.png
+web/img/.DS_Store
+
+# Rust toolchain output; the web build does not need it. (Also gitignored.)
+soroban/target

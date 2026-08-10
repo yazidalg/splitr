@@ -264,6 +264,33 @@ that their floor was 1.5 — the exact thing sponsorship removes — and underst
 The formula is `(2 + subentries + numSponsoring - numSponsored) * baseReserve`; `dina` now reads
 a floor of 0 and the issuer 2.5.
 
+## Deploying
+
+The site is a static bundle with no server and no secrets — the contract ids in
+it are public by design. The one thing a host has to get right is serving
+`index.html` for unknown paths, because `/app` is a client-side route and a
+refresh there would otherwise 404.
+
+The build does not live at the repo root, which trips up framework
+auto-detection: left to itself, Vercel runs a bare `vite build` from the root
+and fails with `UNRESOLVED_ENTRY — Cannot resolve entry module index.html`,
+because `index.html` is in `web/`. `vercel.json` pins the real build:
+
+```
+Build command      npm run web:build
+Output directory   web/dist
+```
+
+Netlify and Cloudflare Pages need the same two settings, and read the SPA
+fallback from `web/public/_redirects`; Vercel ignores that file, so the rewrite
+is in `vercel.json` instead. GitHub Pages is the awkward one — no SPA fallback,
+and a project page is served from a `/<repo>` subpath that breaks the `/app`
+route.
+
+`.vercelignore` keeps the 24 MB of illustration sources in `web/img/*.png` out
+of the upload. Only `web/img/opt/*.webp` is imported, so the originals are
+weight on every deploy and nothing else.
+
 ## How the White Belt primitives map to the product
 
 | Stellar primitive  | Splitr's version                                    |
