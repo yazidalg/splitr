@@ -34,6 +34,14 @@ export interface SplitrSplit {
     args: { id: number; member: string },
     opts?: contract.MethodOptions,
   ) => Promise<contract.AssembledTransaction<contract.Result<bigint>>>;
+  settle_part: (
+    args: { id: number; member: string; amount: bigint },
+    opts?: contract.MethodOptions,
+  ) => Promise<contract.AssembledTransaction<contract.Result<bigint>>>;
+  bills_for: (
+    args: { member: string },
+    opts?: contract.MethodOptions,
+  ) => Promise<contract.AssembledTransaction<number[]>>;
   bill: (
     args: { id: number },
     opts?: contract.MethodOptions,
@@ -109,6 +117,7 @@ const CONTRACT_ERRORS: Record<number, string> = {
   6: 'That address is not on this bill.',
   7: 'Nothing left to pay — that share is already settled.',
   8: 'The payer fronted the bill; they do not settle with themselves.',
+  9: 'That is more than is still owed on this share.',
 };
 
 /** Reduces a contract failure to its reason, or passes other errors through. */

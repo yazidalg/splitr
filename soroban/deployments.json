@@ -2,8 +2,8 @@
   "//": "Deployed contract addresses, by network. Testnet ids are public information and belong in the repo: without them a fresh clone cannot talk to the contract this project actually runs against. Override at runtime with SPLITR_CONTRACT_ID.",
   "testnet": {
     "splitr-split": {
-      "contractId": "CCJ4TVX3OMKWLIC6O2QQUA6PZDHGRCXU6JF7SUUY7GDHJKUHOCHL5HIW",
-      "wasmHash": "5b3b92735d28df15e92fb21930ac0343aae3b7e91a513db4bd6998a2072f884b",
+      "contractId": "CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD",
+      "wasmHash": "c96ac11348362039a1e7f0258f7a7e981d5eed15f82353dbc3afbf4f1560081a",
       "deployer": "GALAQYCF2AASNH54OAYU2JMFTHXZTB4IBKXZPQ6T2RSQD35VODOX5KOP",
       "deployedAt": "2026-08-10"
     },

@@ -9,7 +9,7 @@ Splitr — stablecoin bill splitting on Stellar testnet. Three codebases live si
 | Path       | What it is                          | Toolchain                          |
 | ---------- | ----------------------------------- | ---------------------------------- |
 | `src/`     | The CLI — wallets, asset, splits, contract-backed bills | Node 24+ running TypeScript natively |
-| `web/`     | Landing page + wallet connection    | Vite 8 + React 19 + Tailwind 4     |
+| `web/`     | Landing page (`/`) + dApp (`/app`)  | Vite 8 + React 19 + Tailwind 4     |
 | `soroban/` | On-chain split contract (Rust), deployed to testnet | Cargo workspace + `stellar` CLI    |
 
 `context/Splitr-PRD.md` and the product brief PDF are the source of the copy and the roadmap ("belts"). `README.md` carries the long-form rationale for most decisions below — read it before proposing to change one.
@@ -27,7 +27,7 @@ npm run web:build             # static output in web/dist
 npm run web:typecheck         # tsc over web/ + ../src/money.ts
 
 export PATH="/opt/homebrew/opt/rustup/bin:$PATH"   # cargo is a brew rustup shim, NOT on PATH here
-npm run contract:test         # 11 tests
+npm run contract:test         # 16 tests
 npm run contract:build        # wasm + exported function list
 npm run contract:deploy       # needs the `splitr-deployer` stellar identity
 cd soroban && cargo test agrees_with_money_ts   # a single test
@@ -76,7 +76,7 @@ Number formatting is language-dependent (`web/src/lib/split.ts`): Indonesian gro
 
 ## The Soroban layer
 
-Deployed to testnet at `CCJ4TVX3OMKWLIC6O2QQUA6PZDHGRCXU6JF7SUUY7GDHJKUHOCHL5HIW`, recorded in `soroban/deployments.json` (committed on purpose — a fresh clone must reach the same contract). `src/config.ts` reads it, `SPLITR_CONTRACT_ID` overrides it.
+Deployed to testnet at `CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD`, recorded in `soroban/deployments.json` (committed on purpose — a fresh clone must reach the same contract). `src/config.ts` reads it, `SPLITR_CONTRACT_ID` overrides it.
 
 `src/soroban.ts` is the client. It uses `contract.Client.from<SplitrSplit>()`, which downloads the spec from the chain, so **there are no generated bindings to regenerate after a redeploy** — the `SplitrSplit` interface supplies TypeScript types only. `signTransaction` accepts both a `Keypair` and Freighter's signature, so the same client serves the CLI and the browser.
 
@@ -87,7 +87,19 @@ Two traps that cost real debugging time here:
 - **In contract tests, read events immediately after the call that emits them.** `Env::default()` enables invocation metering, which resets the event buffer at every top-level invocation — even a read like `outstanding()` clears it. Assert with `Event::to_xdr(&env, &contract)` against `env.events().all().filter_by_contract(&contract)`.
 - **Soroban RPC lags a few seconds behind a just-closed ledger.** Deploys, SAC instantiation and reads right after a write all fail spuriously; retry rather than treating it as an error. `billAfterWrite` in `src/commands/bill.ts` does this for post-settle reads.
 
+`settle` delegates to `settle_part`; `remaining_of` exists so both refuse for the same reasons in the same order. Adding a check to one means adding it to the other, and `both_settle_paths_refuse_for_the_same_reasons` will catch you if you don't.
+
+Redeploying mints a **new contract address** — this contract has no upgrade entry point, so old bills stay on the old instance. Update `soroban/deployments.json` in the same commit as the contract change, or the recorded wasm hash stops matching the source. `stellar contract build` prints the hash; it should equal the one in that file.
+
 Never make two RPC reads that must agree (e.g. `bill()` plus `outstanding()`) — they can simulate against different ledgers and print a member as unpaid next to a total saying otherwise. Derive from one snapshot; `outstandingOf` mirrors the contract's own sum.
+
+## The dApp (`web/src/app/`)
+
+`/app` is routed by `web/src/lib/useRoute.ts` — two lines, no router. Path-based, because the landing page already owns the hash for scroll anchors. Static hosts need the `web/public/_redirects` fallback.
+
+`web/src/lib/contract.ts` mirrors `src/soroban.ts` for the browser; the only real difference is that signing goes to the connected wallet instead of a held keypair. Both read `soroban/deployments.json`, so the contract id has one home.
+
+**The entire `app/` tree must stay behind the `lazy()` in `App.tsx`.** `@stellar/stellar-sdk` is bigger than the whole landing page. A static import of it, or of `app/DApp.tsx`, from anything the landing page renders will pull it into the entry chunk. `npm run web:build` should keep `index-*.js` near 288 kB, with `utils-*` (the SDK) and `client-*` as separate chunks.
 
 ## Conventions
 

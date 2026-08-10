@@ -406,3 +406,186 @@ fn settling_requires_the_member_to_authorise() {
         "the member who pays has to be the one who authorised it",
     );
 }
+
+/// Paying half now and half later is the ordinary case, not an edge case: the
+/// `owes`/`paid` pair always supported it, only `settle` insisted on closing
+/// the whole gap at once.
+#[test]
+fn a_share_can_be_paid_in_parts() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (asset, minter, token) = setup(&env);
+    let contract = env.register(SplitrSplit, ());
+    let client = SplitrSplitClient::new(&env, &contract);
+
+    let rani = Address::generate(&env);
+    let dimas = Address::generate(&env);
+    minter.mint(&dimas, &(100_000 * ONE));
+
+    let id = client.create_bill(
+        &rani,
+        &String::from_str(&env, "Kopi"),
+        &asset,
+        &(100_000 * ONE),
+        &vec![&env, rani.clone(), dimas.clone()],
+        &weights(&env, &[1, 1]),
+    );
+
+    assert_eq!(
+        client.settle_part(&id, &dimas, &(20_000 * ONE)),
+        20_000 * ONE
+    );
+    // The money moves for the part, not for the whole share.
+    assert_eq!(token.balance(&rani), 20_000 * ONE);
+    assert_eq!(token.balance(&dimas), 80_000 * ONE);
+    assert_eq!(client.outstanding(&id), 30_000 * ONE);
+
+    // A plain `settle` closes whatever is left, so the two compose.
+    assert_eq!(client.settle(&id, &dimas), 30_000 * ONE);
+    assert_eq!(client.outstanding(&id), 0);
+    assert_eq!(token.balance(&rani), 50_000 * ONE);
+}
+
+/// Refused rather than clamped: quietly taking less than asked for would make
+/// the returned amount disagree with what the caller meant.
+#[test]
+fn paying_more_than_is_owed_is_refused() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (asset, minter, _) = setup(&env);
+    let client = SplitrSplitClient::new(&env, &env.register(SplitrSplit, ()));
+
+    let rani = Address::generate(&env);
+    let dimas = Address::generate(&env);
+    minter.mint(&dimas, &(100_000 * ONE));
+
+    let id = client.create_bill(
+        &rani,
+        &String::from_str(&env, "Kopi"),
+        &asset,
+        &(100_000 * ONE),
+        &vec![&env, rani.clone(), dimas.clone()],
+        &weights(&env, &[1, 1]),
+    );
+
+    assert_eq!(
+        client.try_settle_part(&id, &dimas, &(50_000 * ONE + 1)),
+        Err(Ok(Error::Overpayment)),
+    );
+    // And nothing moved.
+    assert_eq!(client.outstanding(&id), 50_000 * ONE);
+
+    for bad in [0i128, -1] {
+        assert_eq!(
+            client.try_settle_part(&id, &dimas, &bad),
+            Err(Ok(Error::NotPositive)),
+        );
+    }
+}
+
+/// `settle` delegates to `settle_part`, so it must fail identically — otherwise
+/// the same mistake reports two different reasons depending on which one the
+/// caller reached for.
+#[test]
+fn both_settle_paths_refuse_for_the_same_reasons() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (asset, _, _) = setup(&env);
+    let client = SplitrSplitClient::new(&env, &env.register(SplitrSplit, ()));
+    let rani = Address::generate(&env);
+    let dimas = Address::generate(&env);
+    let stranger = Address::generate(&env);
+
+    let id = client.create_bill(
+        &rani,
+        &String::from_str(&env, "Kopi"),
+        &asset,
+        &(100_000 * ONE),
+        &vec![&env, rani.clone(), dimas.clone()],
+        &weights(&env, &[1, 1]),
+    );
+
+    let amount = 1_000 * ONE;
+    assert_eq!(
+        client.try_settle(&id, &rani),
+        client.try_settle_part(&id, &rani, &amount)
+    );
+    assert_eq!(
+        client.try_settle(&id, &stranger),
+        client.try_settle_part(&id, &stranger, &amount),
+    );
+    assert_eq!(
+        client.try_settle(&99, &dimas),
+        client.try_settle_part(&99, &dimas, &amount)
+    );
+}
+
+/// Without this index, "my bills" means reading every bill in the contract and
+/// filtering client-side — one round trip per bill, every time anyone opens
+/// the app.
+#[test]
+fn a_member_can_find_their_own_bills() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (asset, _, _) = setup(&env);
+    let client = SplitrSplitClient::new(&env, &env.register(SplitrSplit, ()));
+    let rani = Address::generate(&env);
+    let dimas = Address::generate(&env);
+    let sari = Address::generate(&env);
+
+    let first = client.create_bill(
+        &rani,
+        &String::from_str(&env, "Kopi"),
+        &asset,
+        &(100 * ONE),
+        &vec![&env, rani.clone(), dimas.clone()],
+        &weights(&env, &[1, 1]),
+    );
+    let second = client.create_bill(
+        &sari,
+        &String::from_str(&env, "Nasi goreng"),
+        &asset,
+        &(200 * ONE),
+        &vec![&env, sari.clone(), dimas.clone()],
+        &weights(&env, &[1, 1]),
+    );
+
+    // Everyone sees exactly the bills they are on, payer or debtor.
+    assert_eq!(client.bills_for(&dimas), vec![&env, first, second]);
+    assert_eq!(client.bills_for(&rani), vec![&env, first]);
+    assert_eq!(client.bills_for(&sari), vec![&env, second]);
+
+    // Somebody with no bills gets an empty list, not an error.
+    assert_eq!(
+        client.bills_for(&Address::generate(&env)),
+        Vec::<u32>::new(&env)
+    );
+}
+
+/// A member named twice on one bill is indexed once, or their list would grow
+/// a duplicate that the app would render as two separate bills.
+#[test]
+fn the_index_does_not_repeat_a_bill() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (asset, _, _) = setup(&env);
+    let client = SplitrSplitClient::new(&env, &env.register(SplitrSplit, ()));
+    let rani = Address::generate(&env);
+    let dimas = Address::generate(&env);
+
+    let id = client.create_bill(
+        &rani,
+        &String::from_str(&env, "Kopi"),
+        &asset,
+        &(300 * ONE),
+        &vec![&env, rani.clone(), dimas.clone(), dimas.clone()],
+        &weights(&env, &[1, 1, 1]),
+    );
+
+    assert_eq!(client.bills_for(&dimas), vec![&env, id]);
+}

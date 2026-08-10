@@ -42,6 +42,8 @@ pub enum Error {
     AlreadySettled = 7,
     /// The payer fronted the bill; they do not settle with themselves.
     PayerCannotSettle = 8,
+    /// A payment larger than what is still owed.
+    Overpayment = 9,
 }
 
 #[contracttype]
@@ -70,6 +72,10 @@ pub struct Bill {
 pub enum DataKey {
     Counter,
     Bill(u32),
+    /// Bill ids this address is on. Without it, "my bills" means fetching every
+    /// bill in the contract and filtering client-side — one RPC round trip per
+    /// bill, every time anyone opens the app.
+    Member(Address),
 }
 
 /// A bill was recorded. `id` is a topic so an indexer can subscribe to one bill
@@ -158,6 +164,10 @@ impl SplitrSplit {
             .get(&DataKey::Counter)
             .unwrap_or(0u32)
             + 1;
+
+        for i in 0..members.len() {
+            index_member(&env, &members.get(i).unwrap(), id);
+        }
         env.storage().instance().set(&DataKey::Counter, &id);
         env.storage()
             .instance()
@@ -186,7 +196,22 @@ impl SplitrSplit {
     /// contract's record cannot disagree: either both happened or neither did.
     /// Returns the amount transferred.
     pub fn settle(env: Env, id: u32, member: Address) -> Result<i128, Error> {
+        let remaining = remaining_of(&env, id, &member)?;
+        Self::settle_part(env, id, member, remaining)
+    }
+
+    /// Pays part of the caller's share.
+    ///
+    /// Someone who cannot cover their whole share today can still pay half of
+    /// it, and the bill records exactly that rather than staying at zero. The
+    /// `owes`/`paid` pair already carried this state; only `settle` insisted on
+    /// closing the gap in one move.
+    pub fn settle_part(env: Env, id: u32, member: Address, amount: i128) -> Result<i128, Error> {
         member.require_auth();
+
+        if amount <= 0 {
+            return Err(Error::NotPositive);
+        }
 
         let mut bill = load(&env, id)?;
         if member == bill.payer {
@@ -199,21 +224,29 @@ impl SplitrSplit {
         if remaining <= 0 {
             return Err(Error::AlreadySettled);
         }
+        // Refused rather than clamped: silently taking less than asked for
+        // would make the returned amount disagree with the caller's intent.
+        if amount > remaining {
+            return Err(Error::Overpayment);
+        }
 
-        token::Client::new(&env, &bill.asset).transfer(&member, &bill.payer, &remaining);
+        token::Client::new(&env, &bill.asset).transfer(&member, &bill.payer, &amount);
 
-        share.paid += remaining;
+        share.paid += amount;
         bill.shares.set(index, share);
         put(&env, &bill);
 
-        Settled {
-            id,
-            member,
-            amount: remaining,
-        }
-        .publish(&env);
+        Settled { id, member, amount }.publish(&env);
 
-        Ok(remaining)
+        Ok(amount)
+    }
+
+    /// Bill ids this address is a member of, newest last.
+    pub fn bills_for(env: Env, member: Address) -> Vec<u32> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Member(member))
+            .unwrap_or_else(|| Vec::new(&env))
     }
 
     pub fn bill(env: Env, id: u32) -> Result<Bill, Error> {
@@ -259,6 +292,44 @@ fn load(env: &Env, id: u32) -> Result<Bill, Error> {
 fn put(env: &Env, bill: &Bill) {
     let key = DataKey::Bill(bill.id);
     env.storage().persistent().set(&key, bill);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND);
+}
+
+/// What `who` still owes on this bill, with the same checks and the same error
+/// order `settle_part` applies — so `settle` can never fail differently from
+/// the call it delegates to.
+fn remaining_of(env: &Env, id: u32, who: &Address) -> Result<i128, Error> {
+    let bill = load(env, id)?;
+    if who == &bill.payer {
+        return Err(Error::PayerCannotSettle);
+    }
+    let index = index_of(&bill.shares, who).ok_or(Error::NotAMember)?;
+    let share = bill.shares.get(index).unwrap();
+    let remaining = share.owes - share.paid;
+    if remaining <= 0 {
+        return Err(Error::AlreadySettled);
+    }
+    Ok(remaining)
+}
+
+/// Appends a bill id to a member's index, skipping ids already there so a
+/// member listed twice on one bill is recorded once.
+fn index_member(env: &Env, member: &Address, id: u32) {
+    let key = DataKey::Member(member.clone());
+    let mut ids: Vec<u32> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| Vec::new(env));
+    for i in 0..ids.len() {
+        if ids.get(i).unwrap() == id {
+            return;
+        }
+    }
+    ids.push_back(id);
+    env.storage().persistent().set(&key, &ids);
     env.storage()
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND);

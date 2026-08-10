@@ -4,7 +4,7 @@ import { server } from './stellar.ts';
 import { walletCreate, walletList, walletFund, walletBalance, walletTrust } from './commands/wallet.ts';
 import { assetInit, assetIssue, assetShow } from './commands/asset.ts';
 import { splitCreate, splitList, splitSettle, splitReconcile } from './commands/split.ts';
-import { billCreate, billList, billShow, billSettle, billWatch } from './commands/bill.ts';
+import { billCreate, billList, billMine, billShow, billSettle, billWatch } from './commands/bill.ts';
 import { describeContractError } from './soroban.ts';
 
 const HELP = `
@@ -29,8 +29,11 @@ splitr — stablecoin bill splitting on Stellar (White Belt slice)
   bill create --group <name> --payer <label> --amount <n> --members a,b,c
               [--shares a=2,b=1]   same bill, recorded by the Soroban contract
   bill list                        every bill the contract holds
+  bill mine <label>                just the bills this member is on
   bill show <id>                   shares and who has paid, read from the contract
-  bill settle <id> --member <l>    transfer and record in one invocation
+  bill settle <id> --member <l> [--amount <n>]
+                                   transfer and record in one invocation;
+                                   --amount pays part of a share
   bill watch [--from <ledger>] [--once]
                                    follow contract events as ledgers close
 
@@ -123,6 +126,8 @@ async function main(): Promise<void> {
       return billCreate(flags);
     case 'bill list':
       return billList();
+    case 'bill mine':
+      return billMine(rest[0]);
     case 'bill show':
       return billShow(rest[0]);
     case 'bill settle':

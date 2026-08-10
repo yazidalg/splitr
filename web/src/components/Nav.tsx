@@ -4,16 +4,32 @@ import { ConnectWallet } from './ConnectWallet.tsx';
 import { LangToggle } from './LangToggle.tsx';
 import { ThemeToggle } from './ThemeToggle.tsx';
 import { useLang } from '../lib/i18n.tsx';
+import { navigate, useRoute } from '../lib/useRoute.ts';
 
 export function Nav() {
   const { t } = useLang();
+  const route = useRoute();
   const [open, setOpen] = useState(false);
 
-  const links = [
-    { href: '#how', label: t.nav.how },
-    { href: '#proof', label: t.nav.proof },
-    { href: '#faq', label: t.nav.faq },
-  ];
+  // The anchor links only mean anything on the landing page; from /app they
+  // would scroll to nothing.
+  const links =
+    route === 'app'
+      ? [{ href: '/', label: 'Splitr' }]
+      : [
+          { href: '#how', label: t.nav.how },
+          { href: '#proof', label: t.nav.proof },
+          { href: '#faq', label: t.nav.faq },
+          { href: '/app', label: t.nav.app },
+        ];
+
+  /** Same-origin paths route client-side; hashes stay plain anchors. */
+  const onNavClick = (href: string) => (e: React.MouseEvent) => {
+    setOpen(false);
+    if (!href.startsWith('/')) return;
+    e.preventDefault();
+    navigate(href);
+  };
 
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : '';
@@ -50,6 +66,7 @@ export function Nav() {
               <li key={l.href}>
                 <a
                   href={l.href}
+                  onClick={onNavClick(l.href)}
                   className="text-[13px] whitespace-nowrap text-muted-foreground transition-colors duration-300 hover:text-foreground"
                 >
                   {l.label}
@@ -102,7 +119,7 @@ export function Nav() {
             >
               <a
                 href={l.href}
-                onClick={() => setOpen(false)}
+                onClick={onNavClick(l.href)}
                 className="block py-3 font-display text-4xl tracking-[-0.03em]"
               >
                 {l.label}

@@ -25,6 +25,7 @@ const en = {
     how: 'How it works',
     proof: 'Under the hood',
     faq: 'FAQ',
+    app: 'App',
   },
 
   a11y: {
@@ -44,6 +45,32 @@ const en = {
     // have before clicking it.
     custody: 'Splitr never sees your secret key. You sign in your own wallet.',
     failed: 'Could not connect',
+  },
+
+  app: {
+    title: 'Your bills',
+    lede: 'Real bills on the deployed contract. The contract computes every share and moves the money in the same call that records it — nothing here is a mock.',
+    connectFirst: 'Connect a wallet to see the bills you are on.',
+    newBill: 'New bill',
+    group: 'What was it',
+    total: 'Total',
+    members: 'Everyone who was in on it',
+    membersHint: 'Stellar addresses, separated by commas. You are added automatically as the payer.',
+    createBill: 'Record the bill',
+    signing: 'Sign in your wallet…',
+    yourBills: 'Bills you are on',
+    loading: 'Reading the contract…',
+    noBills: 'Nothing yet. Record one above.',
+    you: 'you',
+    outstanding: 'Outstanding',
+    settledInFull: 'Settled in full.',
+    payShare: 'Pay',
+    payPart: 'Pay part',
+    partAmount: 'Amount',
+    liveFeed: 'Live from the contract',
+    liveFeedNote: 'Events as ledgers close, roughly every five seconds. Someone else settling shows up here without a refresh.',
+    evCreated: 'created',
+    evSettled: 'settled',
   },
 
   hero: {
@@ -289,6 +316,7 @@ const id: Copy = {
     how: 'Cara kerja',
     proof: 'Di balik layar',
     faq: 'Tanya jawab',
+    app: 'Aplikasi',
   },
 
   a11y: {
@@ -306,6 +334,32 @@ const id: Copy = {
     connected: 'Tersambung',
     custody: 'Splitr tidak pernah melihat secret key Anda. Anda tanda tangan di wallet sendiri.',
     failed: 'Gagal menghubungkan',
+  },
+
+  app: {
+    title: 'Tagihan Anda',
+    lede: 'Tagihan sungguhan di contract yang sudah live. Contract yang menghitung setiap bagian dan memindahkan uangnya di panggilan yang sama saat mencatatnya — tidak ada yang mock di sini.',
+    connectFirst: 'Hubungkan wallet untuk melihat tagihan yang melibatkan Anda.',
+    newBill: 'Tagihan baru',
+    group: 'Untuk apa',
+    total: 'Total',
+    members: 'Siapa saja yang ikut',
+    membersHint: 'Alamat Stellar, pisahkan dengan koma. Anda otomatis masuk sebagai yang nalangin.',
+    createBill: 'Catat tagihannya',
+    signing: 'Tanda tangan di wallet…',
+    yourBills: 'Tagihan yang melibatkan Anda',
+    loading: 'Membaca contract…',
+    noBills: 'Belum ada. Catat satu di atas.',
+    you: 'Anda',
+    outstanding: 'Belum lunas',
+    settledInFull: 'Lunas semua.',
+    payShare: 'Bayar',
+    payPart: 'Bayar sebagian',
+    partAmount: 'Jumlah',
+    liveFeed: 'Langsung dari contract',
+    liveFeedNote: 'Event tiap ledger ditutup, kira-kira lima detik sekali. Orang lain yang bayar langsung muncul di sini tanpa refresh.',
+    evCreated: 'dibuat',
+    evSettled: 'dibayar',
   },
 
   hero: {

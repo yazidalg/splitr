@@ -176,13 +176,21 @@ function requireId(idArg: string | undefined): number {
 export async function billSettle(idArg: string, flags: Record<string, string>): Promise<void> {
   const id = requireId(idArg);
   const label = flags.member;
-  if (!label) throw new Error('Usage: bill settle <id> --member <label>');
+  if (!label) throw new Error('Usage: bill settle <id> --member <label> [--amount <n>]');
 
   const wallet = findWallet(label);
   const client = await splitrClient(await keypairFor(wallet));
   const cfg = requireAssetConfig();
 
-  const tx = await client.settle({ id, member: wallet.publicKey });
+  // Read what this member had already paid before writing, so the reread below
+  // can tell "RPC is a ledger behind" from "a partial payment landed".
+  const paidBefore = paidBy(unwrap((await client.bill({ id })).result), wallet.publicKey);
+
+  // Without --amount the contract works out what is left; with it, a member
+  // pays part of their share now and the rest whenever they can.
+  const tx = flags.amount
+    ? await client.settle_part({ id, member: wallet.publicKey, amount: parseAmount(flags.amount) })
+    : await client.settle({ id, member: wallet.publicKey });
   const sent = await tx.signAndSend();
   const moved = unwrap(sent.result);
 
@@ -193,10 +201,16 @@ export async function billSettle(idArg: string, flags: Record<string, string>): 
   console.log('    the transfer and the record happened in one invocation\n');
 
   printBill(
-    await billAfterWrite(client, id, (b) =>
-      b.shares.some((s) => s.member === wallet.publicKey && s.paid >= s.owes),
+    await billAfterWrite(
+      client,
+      id,
+      (b) => paidBy(b, wallet.publicKey) >= paidBefore + moved,
     ),
   );
+}
+
+function paidBy(bill: ContractBill, member: string): bigint {
+  return bill.shares.find((s) => s.member === member)?.paid ?? 0n;
 }
 
 // ---------------------------------------------------------------------- list
@@ -226,6 +240,39 @@ async function safeBill(client: SplitrClient, id: number): Promise<ContractBill 
     return unwrap((await client.bill({ id })).result);
   } catch {
     return null;
+  }
+}
+
+// ---------------------------------------------------------------------- mine
+
+/**
+ * The bills one member is on, from the contract's own index.
+ *
+ * `bill list` walks 1..count because it is an operator's view of everything.
+ * This is the view an app needs, and it is one call rather than one per bill.
+ */
+export async function billMine(label: string | undefined): Promise<void> {
+  if (!label) throw new Error('Usage: bill mine <label>');
+  const wallet = findWallet(label);
+  const client = await splitrClient();
+  const ids = (await client.bills_for({ member: wallet.publicKey })).result;
+
+  if (ids.length === 0) return void console.log(`"${label}" is not on any bill yet.`);
+
+  const cfg = requireAssetConfig();
+  for (const id of ids) {
+    const bill = await safeBill(client, id);
+    if (!bill) continue;
+    const owed = bill.shares.find((s) => s.member === wallet.publicKey);
+    const remaining = owed ? owed.owes - owed.paid : 0n;
+    const role = bill.payer === wallet.publicKey ? 'fronted' : remaining > 0n ? 'owes' : 'settled';
+    console.log(
+      `#${String(bill.id).padStart(3)}  ${bill.group.padEnd(18)}` +
+        ` ${formatPretty(bill.total).padStart(14)} ${cfg.code}  ${role}` +
+        (remaining > 0n && bill.payer !== wallet.publicKey
+          ? ` ${formatPretty(remaining)}`
+          : ''),
+    );
   }
 }
 

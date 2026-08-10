@@ -1,9 +1,9 @@
 # Splitr
 
-Stablecoin bill splitting on Stellar. This repo covers **White Belt (Level 1)** and
-**Yellow Belt (Level 2)** of the [product brief](context/Splitr%20Product%20Idea%20Brief.pdf):
-wallets, balances and real on-chain transactions, then a Soroban contract, multi-wallet
-browser signing, and live event synchronisation.
+Stablecoin bill splitting on Stellar. This repo covers **White Belt (Level 1)** through
+**Orange Belt (Level 3)** of the [product brief](context/Splitr%20Product%20Idea%20Brief.pdf):
+wallets and real on-chain transactions, then a Soroban contract with multi-wallet browser
+signing and live event synchronisation, then a working mini dApp at `/app`.
 
 It is not a throwaway demo — it is the settlement substrate every later belt sits on. The
 brief's core promise ("ending disputes over who has paid") is implemented literally:
@@ -41,14 +41,15 @@ payments, reconciled from ledger history. Balances cross-check exactly against e
 ## The contract (Yellow Belt)
 
 `soroban/contracts/splitr-split` is the same bill, recorded on-chain. Deployed to testnet at
-[`CCJ4TVX3OMKWLIC6O2QQUA6PZDHGRCXU6JF7SUUY7GDHJKUHOCHL5HIW`](https://stellar.expert/explorer/testnet/contract/CCJ4TVX3OMKWLIC6O2QQUA6PZDHGRCXU6JF7SUUY7GDHJKUHOCHL5HIW).
+[`CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD`](https://stellar.expert/explorer/testnet/contract/CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD).
 
 ```bash
-npm run contract:test          # 11 tests
-npm run contract:build         # 10.6 KB wasm, 5 exported functions
+npm run contract:test          # 16 tests
+npm run contract:build         # 12.5 KB wasm, 7 exported functions
 node src/cli.ts bill create --group "Nasi Padang" --payer alice \
   --amount 300000 --members alice,bob,citra
-node src/cli.ts bill settle 1 --member bob
+node src/cli.ts bill settle 1 --member bob            # or --amount 10000 for part of it
+node src/cli.ts bill mine bob                        # bills this member is on
 node src/cli.ts bill show 1
 node src/cli.ts bill watch      # follow contract events as ledgers close
 ```
@@ -67,6 +68,19 @@ alice up exactly 200,000 and the two payers down exactly 100,000 each.
 The splitting algorithm exists twice — `splitByWeights` in `src/money.ts` and
 `split_by_weights` in `lib.rs` — and `test::agrees_with_money_ts` pins the cases both must
 produce, tie-break included. Changing one without the other is the easiest way to break this repo.
+
+### Two things the dApp needed from the contract
+
+**`bills_for(address)`.** Without an index of which bills an address is on, "my bills" means
+reading every bill in the contract and filtering client-side — one round trip per bill, every
+time anyone opens the app. `create_bill` now appends the id to each member's list.
+
+**`settle_part(id, member, amount)`.** Paying half now and half later is the ordinary case, not
+an edge case; `owes`/`paid` always supported it and only `settle` insisted on closing the whole
+gap at once. `settle` now delegates to it, and a test asserts both paths refuse for the same
+reasons so the same mistake cannot report two different errors. Overpayment is refused rather
+than clamped, because silently taking less than asked for makes the returned amount disagree
+with what the caller meant.
 
 ### Events
 
@@ -189,6 +203,28 @@ Two deliberate deviations from the supplied token set, both marked in the file: 
 is darkened in light mode (the supplied value measured 3.94:1 on `--background`, under AA for body
 copy), and `--faint` is added as a third text tier for 10–13px metadata. Measured ratios are
 4.58–5.44:1 in light and 5.68–9.66:1 in dark.
+
+## The app (Orange Belt)
+
+`/app` is the dApp: connect a wallet, record a bill, pay a share or part of one, and watch the
+contract as ledgers close. Same contract as the CLI, same asset, same balances — the difference
+is only who holds the key.
+
+```bash
+npm run web:dev     # http://localhost:5173/app
+```
+
+Two pages, so `web/src/lib/useRoute.ts` is two lines of routing rather than a router. Path-based
+rather than hash-based, because the landing page already uses `#how`, `#demo` and `#faq` to
+scroll and a hash router would fight them for the same slot. The cost is that a static host has
+to rewrite unknown paths to `index.html`; `web/public/_redirects` does that for Netlify, and
+Vite's dev server does it already.
+
+Everything the app needs — `@stellar/stellar-sdk` and the wallet kit — is behind a dynamic
+import, because the SDK alone is larger than the whole landing page. The entry chunk is 288 KB
+and a visitor who only reads the marketing copy downloads none of the chain code. Check it after
+touching the app: `npm run web:build` should keep `index-*.js` near that number, with `utils-*`
+(the SDK) and `client-*` as separate chunks.
 
 ## How the White Belt primitives map to the product
 
