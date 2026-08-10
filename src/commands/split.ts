@@ -208,6 +208,13 @@ export async function splitSettle(id: string, flags: Record<string, string>): Pr
   const rows = await reconcileSplit(split);
   const only = flags.member;
 
+  // A member onboarded with sponsored reserves holds no XLM, so they cannot pay
+  // their own fee. Someone else bids it for them via a fee-bump; the payment
+  // itself is still signed by, and debited from, the member.
+  const feeSource = flags['fee-source']
+    ? await keypairFor(findWallet(flags['fee-source']))
+    : undefined;
+
   const due = rows.filter((r) => r.owes > r.paid && (!only || r.label === only));
   if (only && !rows.some((r) => r.label === only)) {
     throw new Error(`"${only}" is not a debtor on split ${split.id}.`);
@@ -245,6 +252,7 @@ export async function splitSettle(id: string, flags: Record<string, string>): Pr
           }),
         ],
         split.memo,
+        feeSource ? { feeSource } : {},
       );
       console.log(`  ${label} → ${split.payer}  ${formatPretty(remaining)} ${split.asset.code}`);
       console.log(`    ${explorerTx(hash)}`);

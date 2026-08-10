@@ -1,9 +1,10 @@
 # Splitr
 
 Stablecoin bill splitting on Stellar. This repo covers **White Belt (Level 1)** through
-**Orange Belt (Level 3)** of the [product brief](context/Splitr%20Product%20Idea%20Brief.pdf):
+**Green Belt (Level 4)** of the [product brief](context/Splitr%20Product%20Idea%20Brief.pdf):
 wallets and real on-chain transactions, then a Soroban contract with multi-wallet browser
-signing and live event synchronisation, then a working mini dApp at `/app`.
+signing and live event synchronisation, a working mini dApp at `/app`, and members who
+onboard holding no XLM at all.
 
 It is not a throwaway demo — it is the settlement substrate every later belt sits on. The
 brief's core promise ("ending disputes over who has paid") is implemented literally:
@@ -226,6 +227,43 @@ and a visitor who only reads the marketing copy downloads none of the chain code
 touching the app: `npm run web:build` should keep `index-*.js` near that number, with `utils-*`
 (the SDK) and `client-*` as separate chunks.
 
+## Arriving with nothing (Green Belt)
+
+Stellar charges every account a reserve: 1 XLM to exist, 0.5 more per trustline. That was this
+project's largest practical obstacle, and the earlier README said so — a treasurer cannot tell
+four friends to go buy XLM before anyone can be paid back in Rupiah.
+
+```bash
+node src/cli.ts wallet onboard dina --sponsor issuer
+node src/cli.ts split settle <id> --member dina --fee-source issuer
+```
+
+`wallet onboard` creates the account and its trustline inside a
+`beginSponsoringFutureReserves` / `endSponsoringFutureReserves` sandwich, which is the only way
+`createAccount` may start at zero. All four operations ride in one transaction because they are
+one decision, and it carries two signatures: the sponsor's, and the sponsored account's, because
+Stellar requires the sponsored party to agree to both ends of the sandwich.
+
+That gets a member on-chain, but not transacting — a zero-XLM account still cannot pay a fee.
+`--fee-source` wraps the settlement in a **fee-bump**, so someone else bids the fee while the
+payment itself is still signed by, and debited from, the member.
+
+Verified on testnet. `dina` was onboarded, received 50,000 IDRX, and settled a 20,000 share:
+
+```
+dina: SKIPPED — Transaction rejected: tx_insufficient_balance   # without --fee-source
+dina → alice  20,000 IDRX                                        # with it
+```
+
+Her XLM balance before and after both read `0`. Horizon reports `num_sponsored: 3` against her
+account and names the issuer as sponsor of both the account and the trustline.
+
+**A reserve bug this surfaced.** `snapshot()` computed the minimum balance as
+`(2 + subentries) * baseReserve`, which ignores sponsorship. It told a member holding zero XLM
+that their floor was 1.5 — the exact thing sponsorship removes — and understated the sponsor's.
+The formula is `(2 + subentries + numSponsoring - numSponsored) * baseReserve`; `dina` now reads
+a floor of 0 and the issuer 2.5.
+
 ## How the White Belt primitives map to the product
 
 | Stellar primitive  | Splitr's version                                    |
@@ -263,11 +301,17 @@ run it twice and the second run pays nothing. Partial payments show as `OPEN …
 
 ## Carried forward to the next belts
 
-- **Reserves are the onboarding wall.** Each member needs ~1.5 XLM before touching a Rupiah.
-  Real users won't buy XLM first — Green Belt should sponsor accounts
-  (`beginSponsoringFutureReserves`) and pay fees via fee-bump so members arrive holding zero XLM.
-- **Custody is unspecified in the brief.** Splitr currently holds keys. Non-custodial
-  (Freighter / passkey smart wallets) changes the Indonesian regulatory exposure — decide before
-  Blue Belt's 50 users.
+- ~~**Reserves are the onboarding wall.**~~ Done at Green Belt: `wallet onboard` sponsors the
+  account and its trustline, and `--fee-source` fee-bumps the settlement, so a member arrives and
+  transacts holding zero XLM.
+- ~~**Custody is unspecified in the brief.**~~ Settled at Yellow Belt for the web: the page is
+  non-custodial through Stellar Wallets Kit and never sees a secret key. The CLI still holds keys,
+  which is correct for an operator tool and wrong for anything a member touches.
+- **The dApp cannot yet fee-bump.** `--fee-source` covers the classic path only; a sponsored
+  member using `/app` still needs XLM to call the contract. Soroban fee-bumps work, but
+  `AssembledTransaction.signAndSend` submits the inner transaction itself, so this needs the
+  envelope built by hand.
+- **Sponsorship is never revoked.** Nothing calls `revokeSponsorship`, so a sponsor's reserve is
+  locked for as long as the member exists. Fine at four members, not at Blue Belt's fifty.
 - **Black Belt's 20+ mainnet users are gated on a real IDR anchor**, which the brief defers to
-  "future." That is the project's largest unstated risk.
+  "future." That remains the project's largest unstated risk.

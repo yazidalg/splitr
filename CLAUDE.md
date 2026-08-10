@@ -53,6 +53,8 @@ Two consequences for `src/money.ts` specifically: it must stay dependency-free a
 - `config.ts` — env-overridable settings and the `.splitr/asset.json` settlement asset. `SPLITR_ASSET_CODE`/`SPLITR_ASSET_ISSUER` point at an external asset; otherwise `asset init` issues `IDRX` (a local test token — deliberately *not* testnet USDC, which has 200+ unverifiable issuers).
 - `store.ts` — JSON files under `.splitr/` (gitignored), plus AES-256-GCM/scrypt encryption of wallet secrets. `keypairFor()` is the only way to get a signer.
 - `stellar.ts` — Horizon client, `snapshot()` (balances + reserve floor), `submit()` (build/sign/send), `bidFee()` (p90×2 capped at 0.01 XLM), and `describeSubmitError()` which maps Horizon result codes to actionable hints via the `HINTS` table. Add a hint there rather than handling a result code at a call site.
+  - `submit()` takes `cosigners` (operations whose source differs from the transaction source) and `feeSource` (wraps in a fee-bump so a zero-XLM account can transact).
+  - The reserve floor is `(2 + subentries + numSponsoring - numSponsored) * baseReserve`. Do not simplify it back to `2 + subentries`: sponsored members legitimately hold zero XLM, and dropping those terms tells them they need 1.5.
 
 Three behaviours are load-bearing product promises, not implementation details:
 

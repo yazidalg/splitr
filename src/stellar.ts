@@ -22,8 +22,12 @@ export interface AccountSnapshot {
   exists: boolean;
   publicKey: string;
   subentries: number;
+  /** Reserves this account is paying on someone else's behalf. */
+  sponsoring: number;
+  /** Reserves someone else is paying on this account's behalf. */
+  sponsored: number;
   balances: BalanceLine[];
-  /** XLM held back by the protocol: (2 + subentries) * base reserve. */
+  /** (2 + subentries + sponsoring - sponsored) * base reserve. */
   minBalanceXLM: number;
   spendableXLM: number;
 }
@@ -44,11 +48,21 @@ export async function snapshot(publicKey: string): Promise<AccountSnapshot> {
       };
     });
     const native = Number(balances.find((b) => b.code === 'XLM')?.balance ?? '0');
-    const minBalance = (2 + acc.subentry_count) * BASE_RESERVE_XLM;
+    // Sponsorship moves a reserve from the sponsored account to the sponsor, so
+    // the floor is not just "two plus your subentries". Leaving those two terms
+    // out understated the sponsor's floor and overstated a sponsored member's —
+    // it told a member holding zero XLM that they needed 1.5, which is the
+    // whole thing sponsorship exists to avoid.
+    const sponsoring = (acc as { num_sponsoring?: number }).num_sponsoring ?? 0;
+    const sponsored = (acc as { num_sponsored?: number }).num_sponsored ?? 0;
+    const entries = Math.max(0, 2 + acc.subentry_count + sponsoring - sponsored);
+    const minBalance = entries * BASE_RESERVE_XLM;
     return {
       exists: true,
       publicKey,
       subentries: acc.subentry_count,
+      sponsoring,
+      sponsored,
       balances,
       minBalanceXLM: minBalance,
       spendableXLM: Math.max(0, native - minBalance),
@@ -59,6 +73,8 @@ export async function snapshot(publicKey: string): Promise<AccountSnapshot> {
         exists: false,
         publicKey,
         subentries: 0,
+        sponsoring: 0,
+        sponsored: 0,
         balances: [],
         minBalanceXLM: 0,
         spendableXLM: 0,
@@ -110,25 +126,52 @@ export async function bidFee(): Promise<string> {
   return cachedFee;
 }
 
-/** Build, sign and submit a single-source transaction. Returns the tx hash. */
+export interface SubmitOptions {
+  /**
+   * Extra signers, for operations whose source is not the transaction source —
+   * a sponsored account authorising its own trustline, for instance.
+   */
+  cosigners?: Keypair[];
+  /**
+   * Pays the fee instead of the source account, by wrapping the whole thing in
+   * a fee-bump. This is what lets a member hold zero XLM and still transact:
+   * the inner transaction's fee is never charged, only the outer one's.
+   */
+  feeSource?: Keypair;
+}
+
+/** Build, sign and submit a transaction. Returns the tx hash. */
 export async function submit(
   source: Keypair,
   ops: xdr.Operation[],
   memo?: string,
+  opts: SubmitOptions = {},
 ): Promise<string> {
   const account = await server.loadAccount(source.publicKey());
+  const fee = await bidFee();
   const builder = new TransactionBuilder(account, {
-    fee: await bidFee(),
+    fee,
     networkPassphrase: NETWORK_PASSPHRASE,
   });
   for (const op of ops) builder.addOperation(op);
   if (memo) builder.addMemo(Memo.text(memo));
   const tx = builder.setTimeout(60).build();
-  tx.sign(source);
+  tx.sign(source, ...(opts.cosigners ?? []));
 
   try {
-    const res = await server.submitTransaction(tx);
-    return res.hash;
+    if (!opts.feeSource) {
+      return (await server.submitTransaction(tx)).hash;
+    }
+    // The fee-bump must bid at least as much per operation as the inner
+    // transaction, so reuse the same bid rather than the base fee.
+    const bumped = TransactionBuilder.buildFeeBumpTransaction(
+      opts.feeSource,
+      fee,
+      tx,
+      NETWORK_PASSPHRASE,
+    );
+    bumped.sign(opts.feeSource);
+    return (await server.submitTransaction(bumped)).hash;
   } catch (err) {
     throw new Error(describeSubmitError(err));
   }

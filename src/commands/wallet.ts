@@ -18,7 +18,7 @@ import {
 } from '../stellar.ts';
 import { formatPretty, parseAmount } from '../money.ts';
 
-export async function walletCreate(label: string): Promise<void> {
+export async function walletCreate(label: string, quiet = false): Promise<void> {
   if (!label) throw new Error('Usage: wallet create <label>');
   const wallets = loadWallets();
   if (wallets.some((w) => w.label === label)) throw new Error(`Wallet "${label}" already exists.`);
@@ -33,6 +33,7 @@ export async function walletCreate(label: string): Promise<void> {
   });
   saveWallets(wallets);
 
+  if (quiet) return;
   console.log(`Created wallet "${label}"`);
   console.log(`  public key  ${kp.publicKey()}`);
   console.log(`  secret      encrypted at rest (AES-256-GCM)`);
@@ -126,4 +127,71 @@ export async function walletTrust(label: string): Promise<void> {
   console.log(`"${label}" now trusts ${cfg.code}`);
   console.log(`  a trustline costs 0.5 XLM of reserve — this is the onboarding cost per member`);
   console.log(`  ${explorerTx(hash)}`);
+}
+
+/**
+ * Brings a member on-chain holding nothing at all.
+ *
+ * Stellar makes every account pay a reserve: 1 XLM to exist, 0.5 more per
+ * trustline. That is the onboarding wall this project keeps running into — a
+ * treasurer cannot tell four friends to go buy XLM before anyone can be paid
+ * back in Rupiah. Sponsored reserves move that cost to whoever is already
+ * funded: the sponsor's balance is locked for the reserve, the member's stays
+ * at zero, and the member can hand the reserve back later by revoking
+ * sponsorship.
+ *
+ * All four operations ride in one transaction, because they are one decision.
+ * `createAccount` may start at zero only inside a sponsorship sandwich, and
+ * both the sandwich's opening and its closing have to be authorised by the
+ * account being sponsored — hence two signatures on one envelope.
+ */
+export async function walletOnboard(label: string, flags: Record<string, string>): Promise<void> {
+  if (!label) throw new Error('Usage: wallet onboard <label> [--sponsor <label>]');
+
+  const cfg = requireAssetConfig();
+  const asset = assetFrom(cfg);
+  const sponsorLabel = flags.sponsor ?? 'issuer';
+  const sponsor = findWallet(sponsorLabel);
+  if (sponsor.label === label) throw new Error('A wallet cannot sponsor itself.');
+
+  const sponsorSnap = await snapshot(sponsor.publicKey);
+  if (!sponsorSnap.exists) throw new Error(`Sponsor "${sponsorLabel}" is not funded yet.`);
+
+  // Reuse the wallet if it exists but never made it on-chain; otherwise mint one.
+  const wallets = loadWallets();
+  const existing = wallets.find((w) => w.label === label);
+  if (existing && (await snapshot(existing.publicKey)).exists) {
+    throw new Error(`"${label}" already exists on-chain. Onboarding is for new members.`);
+  }
+  // Quietly: `wallet fund` is the wrong next step for a sponsored member.
+  if (!existing) await walletCreate(label, true);
+
+  const member = findWallet(label);
+  const memberKp = await keypairFor(member);
+  const sponsorKp = await keypairFor(sponsor);
+
+  const hash = await submit(
+    sponsorKp,
+    [
+      Operation.beginSponsoringFutureReserves({ sponsoredId: member.publicKey }),
+      Operation.createAccount({ destination: member.publicKey, startingBalance: '0' }),
+      Operation.changeTrust({ asset, source: member.publicKey }),
+      Operation.endSponsoringFutureReserves({ source: member.publicKey }),
+    ],
+    undefined,
+    { cosigners: [memberKp] },
+  );
+
+  const after = await snapshot(member.publicKey);
+  const xlm = after.balances.find((b) => b.code === 'XLM')?.balance ?? '0';
+
+  console.log(`Onboarded "${label}", sponsored by "${sponsorLabel}"`);
+  console.log(`  ${explorerTx(hash)}`);
+  console.log(`  account   ${member.publicKey}`);
+  console.log(`  XLM       ${xlm}  (the reserve is locked in "${sponsorLabel}", not here)`);
+  console.log(`  ${cfg.code}      trustline open, ready to receive`);
+  console.log(
+    `\n"${label}" holds no XLM and still cannot pay a fee — settle for them with` +
+      `\n  split settle <id> --member ${label} --fee-source ${sponsorLabel}`,
+  );
 }

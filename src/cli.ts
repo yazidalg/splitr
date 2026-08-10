@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 import { HORIZON_URL, NETWORK_PASSPHRASE } from './config.ts';
 import { server } from './stellar.ts';
-import { walletCreate, walletList, walletFund, walletBalance, walletTrust } from './commands/wallet.ts';
+import {
+  walletCreate,
+  walletList,
+  walletFund,
+  walletBalance,
+  walletTrust,
+  walletOnboard,
+} from './commands/wallet.ts';
 import { assetInit, assetIssue, assetShow } from './commands/asset.ts';
 import { splitCreate, splitList, splitSettle, splitReconcile } from './commands/split.ts';
 import { billCreate, billList, billMine, billShow, billSettle, billWatch } from './commands/bill.ts';
@@ -15,6 +22,9 @@ splitr — stablecoin bill splitting on Stellar (White Belt slice)
   wallet list                      all wallets with their on-chain state
   wallet balance [<label>|--all]   balances, reserve floor, spendable XLM
   wallet trust <label>             open a trustline to the settlement asset
+  wallet onboard <label> [--sponsor <label>]
+                                   create the account AND its trustline with
+                                   sponsored reserves — the member holds 0 XLM
 
   asset init [--code IDRX]         stand up the settlement asset + issuer
   asset issue --to <label> --amount <n>
@@ -23,7 +33,7 @@ splitr — stablecoin bill splitting on Stellar (White Belt slice)
   split create --group <name> --payer <label> --amount <n> --members a,b,c
                [--shares a=2,b=1] [--note "..."]
   split list
-  split settle <id> [--member <label>]
+  split settle <id> [--member <label>] [--fee-source <label>]
   split reconcile <id>             rebuild who-paid-what from the ledger
 
   bill create --group <name> --payer <label> --amount <n> --members a,b,c
@@ -105,6 +115,8 @@ async function main(): Promise<void> {
       return walletBalance(rest[0] ?? (flags.all ? '--all' : ''));
     case 'wallet trust':
       return walletTrust(rest[0]);
+    case 'wallet onboard':
+      return walletOnboard(rest[0], flags);
 
     case 'asset init':
       return assetInit(flags);
