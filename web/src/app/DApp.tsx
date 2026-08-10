@@ -15,11 +15,16 @@ import {
   CONTRACT_ID,
   SAC_ID,
   describeError,
+  fetchAccount,
+  fundWithFriendbot,
+  openTrustline,
   makeClient,
+  makeReadClient,
   outstandingOf,
   readEvents,
   shareOf,
   unwrap,
+  type AccountState,
   type Bill,
   type BillEvent,
   type SplitrClient,
@@ -29,6 +34,10 @@ export default function DApp() {
   const { t } = useLang();
   const { address, connect, connecting, signTransaction } = useWallet();
   const [client, setClient] = useState<SplitrClient | null>(null);
+  // Reads go through an unbound client so they work before the account is
+  // funded; only writes need the signer.
+  const [reader, setReader] = useState<SplitrClient | null>(null);
+  const [account, setAccount] = useState<AccountState | null>(null);
   const [bills, setBills] = useState<Bill[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +45,16 @@ export default function DApp() {
 
   // One client per connected account: the signer is baked in, so reusing one
   // built for a previous address asks the wrong wallet to sign.
+  useEffect(() => {
+    let cancelled = false;
+    makeReadClient()
+      .then((c) => !cancelled && setReader(c))
+      .catch((err) => !cancelled && setError(describeError(err)));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     makeClient(address ?? undefined, address ? signTransaction : undefined)
@@ -47,13 +66,14 @@ export default function DApp() {
   }, [address, signTransaction]);
 
   const refresh = useCallback(async () => {
-    if (!client || !address) return;
+    if (!reader || !address) return;
     try {
-      const ids = (await client.bills_for({ member: address })).result;
+      setAccount(await fetchAccount(address));
+      const ids = (await reader.bills_for({ member: address })).result;
       const loaded = await Promise.all(
         ids.map(async (id) => {
           try {
-            return unwrap((await client.bill({ id })).result);
+            return unwrap((await reader.bill({ id })).result);
           } catch {
             // A bill whose storage TTL lapsed is gone, not a reason to fail
             // the whole list.
@@ -65,7 +85,7 @@ export default function DApp() {
     } catch (err) {
       setError(describeError(err));
     }
-  }, [client, address]);
+  }, [reader, address]);
 
   useEffect(() => {
     if (!address) {
@@ -80,13 +100,13 @@ export default function DApp() {
   // list, which is the point of watching at all.
   const cursor = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (!client) return;
+    if (!reader) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
 
     const tick = async () => {
       try {
-        const page = await readEvents(client, { cursor: cursor.current });
+        const page = await readEvents(reader, { cursor: cursor.current });
         if (stopped) return;
         if (page.cursor) cursor.current = page.cursor;
         if (page.events.length) {
@@ -105,7 +125,7 @@ export default function DApp() {
       stopped = true;
       clearTimeout(timer);
     };
-  }, [client, refresh]);
+  }, [reader, refresh]);
 
   const run = useCallback(
     async (label: string, fn: () => Promise<void>) => {
@@ -152,6 +172,14 @@ export default function DApp() {
         </div>
       ) : (
         <>
+          <AccountPanel
+            address={address}
+            account={account}
+            busy={busy}
+            run={run}
+            signTransaction={signTransaction}
+          />
+
           <NewBill address={address} client={client} busy={busy} run={run} />
 
           <section className="mt-12">
@@ -189,6 +217,96 @@ export default function DApp() {
         </p>
       ) : null}
     </main>
+  );
+}
+
+// ------------------------------------------------------------- account panel
+
+/**
+ * Who you are signed in as, and whether this account can do anything yet.
+ *
+ * A wallet freshly created in an extension has no ledger entry at all until it
+ * is funded, and no trustline until one is opened — so it can read the app but
+ * not act in it. Saying that plainly, with the way out attached, beats letting
+ * "Record the bill" fail with a simulation error.
+ */
+function AccountPanel({
+  address,
+  account,
+  busy,
+  run,
+  signTransaction,
+}: {
+  address: string;
+  account: AccountState | null;
+  busy: string | null;
+  run: (label: string, fn: () => Promise<void>) => Promise<void>;
+  signTransaction: (
+    xdr: string,
+    opts?: { networkPassphrase?: string },
+  ) => Promise<{ signedTxXdr: string; signerAddress?: string }>;
+}) {
+  const { t } = useLang();
+
+  const trust = () =>
+    void run('trust', async () => {
+      await openTrustline(address, signTransaction);
+      await new Promise((r) => setTimeout(r, 3_000));
+    });
+
+  const fund = () =>
+    void run('fund', async () => {
+      await fundWithFriendbot(address);
+      // Horizon needs a moment to surface the new account.
+      await new Promise((r) => setTimeout(r, 3_000));
+    });
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <span className="block text-[12px] text-muted-foreground">{t.app.signedInAs}</span>
+          <span className="mt-1 block font-mono text-[12.5px] break-all">{address}</span>
+        </div>
+        <div className="text-right">
+          <span className="block text-[12px] text-muted-foreground">{t.app.balance}</span>
+          <span className="mt-1 block font-mono text-[15px]">
+            {account?.idrx ? `${formatPretty(parseAmount(account.idrx))} ${ASSET_CODE}` : `— ${ASSET_CODE}`}
+          </span>
+          <span className="mt-0.5 block font-mono text-[12px] text-faint">
+            {account ? `${account.xlm} XLM` : '…'}
+          </span>
+        </div>
+      </div>
+
+      {account && !account.exists ? (
+        <div className="mt-5 rounded-xl border border-dashed border-border p-4">
+          <p className="text-[13px] text-muted-foreground">{t.app.notFunded}</p>
+          <button
+            type="button"
+            onClick={fund}
+            disabled={busy !== null}
+            className="mt-3 rounded-full bg-primary px-4 py-2 text-[12.5px] font-medium text-primary-foreground disabled:opacity-50"
+          >
+            {busy === 'fund' ? t.app.funding : t.app.fundIt}
+          </button>
+        </div>
+      ) : null}
+
+      {account?.exists && account.idrx === null ? (
+        <div className="mt-5 rounded-xl border border-dashed border-border p-4">
+          <p className="text-[13px] text-muted-foreground">{t.app.noTrustline}</p>
+          <button
+            type="button"
+            onClick={trust}
+            disabled={busy !== null}
+            className="mt-3 rounded-full bg-primary px-4 py-2 text-[12.5px] font-medium text-primary-foreground disabled:opacity-50"
+          >
+            {busy === 'trust' ? t.app.signing : t.app.openTrustline}
+          </button>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

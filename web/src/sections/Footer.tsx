@@ -1,13 +1,17 @@
 import { Mark } from '../components/Icons.tsx';
 import { useLang } from '../lib/i18n.tsx';
+import { useRoute } from '../lib/useRoute.ts';
 
 export function Footer() {
   const { t } = useLang();
+  const prefix = useRoute() === 'app' ? '/' : '';
 
   const links = [
-    { href: '#how', label: t.nav.how },
-    { href: '#proof', label: t.nav.proof },
-    { href: '#faq', label: t.nav.faq },
+    // Scroll anchors only exist on the landing page. From /app they pointed at
+    // nothing, so send people back to the page that has them.
+    { href: prefix + '#how', label: t.nav.how },
+    { href: prefix + '#proof', label: t.nav.proof },
+    { href: prefix + '#faq', label: t.nav.faq },
   ];
 
   return (

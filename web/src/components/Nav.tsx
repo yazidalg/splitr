@@ -13,9 +13,11 @@ export function Nav() {
 
   // The anchor links only mean anything on the landing page; from /app they
   // would scroll to nothing.
+  // On /app the logo is already the way back, so a second link saying so is
+  // just noise beside it.
   const links =
     route === 'app'
-      ? [{ href: '/', label: 'Splitr' }]
+      ? []
       : [
           { href: '#how', label: t.nav.how },
           { href: '#proof', label: t.nav.proof },
@@ -78,25 +80,37 @@ export function Nav() {
           <LangToggle className="ml-auto" />
           <ThemeToggle />
 
-          <ConnectWallet className="hidden lg:inline-flex" />
+          {/* One trailing action, never both. There is nothing to sign on the
+              landing page, and `#demo` does not exist on /app — carrying both
+              overflowed the pill and left a link pointing at nothing.
+              ConnectWallet is not given a `hidden` class here: it sets its own
+              `inline-flex`, and Tailwind picks between competing display
+              utilities by stylesheet order, so the class would be ignored. */}
+          {route === 'app' ? (
+            <ConnectWallet />
+          ) : (
+            <a
+              href="#demo"
+              className="hidden items-center gap-2 rounded-full bg-primary px-4 py-2 text-[13px] font-medium whitespace-nowrap text-primary-foreground transition-transform duration-500 ease-fluid active:scale-[0.97] sm:inline-flex"
+            >
+              {t.hero.primary}
+              <ArrowRight size={14} />
+            </a>
+          )}
 
-          <a
-            href="#demo"
-            className="hidden items-center gap-2 rounded-full bg-primary px-4 py-2 text-[13px] font-medium whitespace-nowrap text-primary-foreground transition-transform duration-500 ease-fluid active:scale-[0.97] sm:inline-flex"
-          >
-            {t.hero.primary}
-            <ArrowRight size={14} />
-          </a>
-
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            aria-label={open ? t.a11y.closeMenu : t.a11y.openMenu}
-            className="grid size-9 shrink-0 place-items-center rounded-full bg-foreground/[0.05] sm:hidden"
-          >
-            {open ? <X size={18} /> : <List size={18} />}
-          </button>
+          {/* /app has no nav links and its wallet control sits in the pill at
+              every width, so there is nothing behind a menu to open. */}
+          {links.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              aria-expanded={open}
+              aria-label={open ? t.a11y.closeMenu : t.a11y.openMenu}
+              className="grid size-9 shrink-0 place-items-center rounded-full bg-foreground/[0.05] sm:hidden"
+            >
+              {open ? <X size={18} /> : <List size={18} />}
+            </button>
+          ) : null}
         </nav>
       </header>
 
@@ -126,20 +140,6 @@ export function Nav() {
               </a>
             </li>
           ))}
-          {/* The pill has no room for this below lg, so the menu carries it. */}
-          <li
-            className="mt-6 transition-all duration-700 ease-fluid"
-            style={{
-              transitionDelay: open ? `${120 + links.length * 70}ms` : '0ms',
-              transform: open ? 'translateY(0)' : 'translateY(2rem)',
-              opacity: open ? 1 : 0,
-            }}
-          >
-            <ConnectWallet />
-            <p className="mt-3 max-w-xs text-[12px] leading-relaxed text-faint">
-              {t.wallet.custody}
-            </p>
-          </li>
         </ul>
       </div>
     </>

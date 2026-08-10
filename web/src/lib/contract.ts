@@ -16,7 +16,9 @@ import deployments from '../../../soroban/deployments.json';
 export const CONTRACT_ID = deployments.testnet['splitr-split'].contractId;
 export const SAC_ID = deployments.testnet['idrx-sac'].contractId;
 export const ASSET_CODE = 'IDRX';
+export const ASSET_ISSUER = deployments.testnet['idrx-sac'].asset.split(':')[1];
 export const RPC_URL = 'https://soroban-testnet.stellar.org';
+export const HORIZON_URL = 'https://horizon-testnet.stellar.org';
 export const NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
 
 export interface Share {
@@ -68,6 +70,24 @@ type SignTransaction = (
   xdr: string,
   opts?: { networkPassphrase?: string },
 ) => Promise<{ signedTxXdr: string; signerAddress?: string }>;
+
+/**
+ * A client for reading only.
+ *
+ * Deliberately unbound to any account. Simulation needs a source account, and
+ * binding the connected one made every read demand that it already exist
+ * on-chain — so a freshly created wallet, which has no ledger entry until it is
+ * funded, could not even list the bills it is on. Without a `publicKey` the SDK
+ * substitutes a null account, and reads work for anybody.
+ */
+export async function makeReadClient(): Promise<SplitrClient> {
+  const { contract } = await import('@stellar/stellar-sdk');
+  return contract.Client.from<SplitrSplit>({
+    contractId: CONTRACT_ID,
+    networkPassphrase: NETWORK_PASSPHRASE,
+    rpcUrl: RPC_URL,
+  });
+}
 
 /**
  * A client bound to the connected account.
@@ -124,6 +144,75 @@ export function outstandingOf(bill: Bill): bigint {
 
 export function shareOf(bill: Bill, member: string): Share | undefined {
   return bill.shares.find((s) => s.member === member);
+}
+
+// ------------------------------------------------------------------- account
+
+export interface AccountState {
+  /** False until the account is funded — Stellar has no entry for it before that. */
+  exists: boolean;
+  xlm: string;
+  /** Null when there is no trustline for the settlement asset yet. */
+  idrx: string | null;
+}
+
+/**
+ * Balances, from Horizon rather than the contract: an account's XLM and its
+ * trustlines are classic ledger state, and Soroban RPC does not serve them.
+ */
+export async function fetchAccount(address: string): Promise<AccountState> {
+  const res = await fetch(`${HORIZON_URL}/accounts/${address}`);
+  if (res.status === 404) return { exists: false, xlm: '0', idrx: null };
+  if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
+  const data = (await res.json()) as {
+    balances: { asset_type: string; asset_code?: string; balance: string }[];
+  };
+  const native = data.balances.find((b) => b.asset_type === 'native');
+  const idrx = data.balances.find((b) => b.asset_code === ASSET_CODE);
+  return {
+    exists: true,
+    xlm: native?.balance ?? '0',
+    idrx: idrx ? idrx.balance : null,
+  };
+}
+
+/**
+ * Opens the IDRX trustline, signed by the visitor's own wallet.
+ *
+ * Stellar will not let an account hold an asset it has not agreed to, and the
+ * CLI cannot do this on a browser wallet's behalf — it has no key for it. So
+ * the app builds the classic transaction and the wallet signs it, which is the
+ * only route a Freighter user has to becoming able to receive IDRX.
+ */
+export async function openTrustline(
+  address: string,
+  signTransaction: SignTransaction,
+): Promise<string> {
+  const { Horizon, TransactionBuilder, Operation, Asset, BASE_FEE } = await import(
+    '@stellar/stellar-sdk'
+  );
+  const server = new Horizon.Server(HORIZON_URL);
+  const account = await server.loadAccount(address);
+  const tx = new TransactionBuilder(account, {
+    fee: BASE_FEE,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(Operation.changeTrust({ asset: new Asset(ASSET_CODE, ASSET_ISSUER) }))
+    .setTimeout(120)
+    .build();
+
+  const { signedTxXdr } = await signTransaction(tx.toXDR(), {
+    networkPassphrase: NETWORK_PASSPHRASE,
+  });
+  const signed = TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE);
+  const res = await server.submitTransaction(signed);
+  return res.hash;
+}
+
+/** Testnet only. Friendbot is the stand-in for an on-ramp that does not exist yet. */
+export async function fundWithFriendbot(address: string): Promise<void> {
+  const res = await fetch(`${HORIZON_URL}/friendbot?addr=${address}`);
+  if (!res.ok && res.status !== 400) throw new Error(`Friendbot returned ${res.status}`);
 }
 
 // -------------------------------------------------------------------- events
