@@ -27,7 +27,7 @@ splitr — stablecoin bill splitting on Stellar (White Belt slice)
                                    sponsored reserves — the member holds 0 XLM
 
   asset init [--code IDRX]         stand up the settlement asset + issuer
-  asset issue --to <label> --amount <n>
+  asset issue --to <label|G…address> --amount <n>
   asset show
 
   split create --group <name> --payer <label> --amount <n> --members a,b,c

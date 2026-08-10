@@ -138,6 +138,11 @@ export function describeError(err: unknown): string {
   return message;
 }
 
+/** stellar.expert is where a payment stops being a claim and becomes checkable. */
+export function explorerTx(hash: string): string {
+  return `https://stellar.expert/explorer/testnet/tx/${hash}`;
+}
+
 export function outstandingOf(bill: Bill): bigint {
   return bill.shares.reduce((sum, s) => sum + (s.owes > s.paid ? s.owes - s.paid : 0n), 0n);
 }

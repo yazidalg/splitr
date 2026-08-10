@@ -1,4 +1,4 @@
-import { Operation } from '@stellar/stellar-sdk';
+import { Operation, StrKey } from '@stellar/stellar-sdk';
 import { loadWallets, findWallet, keypairFor } from '../store.ts';
 import { saveAssetConfig, requireAssetConfig, assetFrom, loadAssetConfig } from '../config.ts';
 import { snapshot, fundWithFriendbot, submit, hasTrustline, explorerTx } from '../stellar.ts';
@@ -41,20 +41,36 @@ export async function assetIssue(flags: Record<string, string>): Promise<void> {
   }
   const to = flags.to;
   const amount = flags.amount;
-  if (!to || !amount) throw new Error('Usage: asset issue --to <label> --amount <n>');
+  if (!to || !amount) {
+    throw new Error('Usage: asset issue --to <label|G…address> --amount <n>');
+  }
 
-  const dest = findWallet(to);
-  const destSnap = await snapshot(dest.publicKey);
-  if (!destSnap.exists) throw new Error(`"${to}" is not funded yet. Run \`wallet fund ${to}\`.`);
+  // A raw address as well as a label, because the wallets that most need test
+  // funds are browser wallets Splitr holds no key for.
+  const external = StrKey.isValidEd25519PublicKey(to);
+  const destKey = external ? to : findWallet(to).publicKey;
+
+  const destSnap = await snapshot(destKey);
+  if (!destSnap.exists) {
+    throw new Error(
+      external
+        ? `${to} does not exist on the ledger yet — it has to be funded first.`
+        : `"${to}" is not funded yet. Run \`wallet fund ${to}\`.`,
+    );
+  }
   if (!hasTrustline(destSnap, asset)) {
-    throw new Error(`"${to}" has no ${cfg.code} trustline. Run \`wallet trust ${to}\` first.`);
+    throw new Error(
+      external
+        ? `That account has no ${cfg.code} trustline yet. Open one from the app, or with the wallet that holds it.`
+        : `"${to}" has no ${cfg.code} trustline. Run \`wallet trust ${to}\` first.`,
+    );
   }
 
   const units = parseAmount(amount);
   const issuerKp = await keypairFor(findWallet(cfg.issuerLabel));
   const hash = await submit(
     issuerKp,
-    [Operation.payment({ destination: dest.publicKey, asset, amount: formatAmount(units) })],
+    [Operation.payment({ destination: destKey, asset, amount: formatAmount(units) })],
     'splitr:mint',
   );
   console.log(`Issued ${formatPretty(units)} ${cfg.code} to "${to}"`);

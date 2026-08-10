@@ -15,6 +15,7 @@ import {
   CONTRACT_ID,
   SAC_ID,
   describeError,
+  explorerTx,
   fetchAccount,
   fundWithFriendbot,
   openTrustline,
@@ -41,6 +42,7 @@ export default function DApp() {
   const [bills, setBills] = useState<Bill[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<TxResult | null>(null);
   const [events, setEvents] = useState<BillEvent[]>([]);
 
   // One client per connected account: the signer is baked in, so reusing one
@@ -127,12 +129,14 @@ export default function DApp() {
     };
   }, [reader, refresh]);
 
-  const run = useCallback(
-    async (label: string, fn: () => Promise<void>) => {
+  const run = useCallback<Run>(
+    async (label, fn) => {
       setBusy(label);
       setError(null);
+      setResult(null);
       try {
-        await fn();
+        const outcome = await fn();
+        if (outcome) setResult(outcome);
         await refresh();
       } catch (err) {
         setError(describeError(err));
@@ -156,6 +160,10 @@ export default function DApp() {
           {CONTRACT_ID}
         </p>
       </header>
+
+      {/* Above the content, not below it: after recording a bill the form is at
+          the top of the page, and a receipt further down goes unseen. */}
+      {result ? <Receipt result={result} onDismiss={() => setResult(null)} /> : null}
 
       {!address ? (
         <div className="rounded-2xl border border-dashed border-border p-8 text-center">
@@ -220,6 +228,47 @@ export default function DApp() {
   );
 }
 
+/**
+ * What an action actually did. A confirmation with no transaction hash asks to
+ * be taken on trust, which is the habit this whole project exists to replace.
+ */
+export interface TxResult {
+  summary: string;
+  hash: string;
+}
+
+export type Run = (
+  label: string,
+  fn: () => Promise<TxResult | void>,
+) => Promise<void>;
+
+function Receipt({ result, onDismiss }: { result: TxResult; onDismiss: () => void }) {
+  const { t } = useLang();
+  return (
+    <section className="mb-8 rounded-xl border border-primary/30 bg-primary/[0.06] px-4 py-3.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-[13px]">{result.summary}</p>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="text-[12px] text-muted-foreground hover:text-foreground"
+        >
+          {t.app.dismiss}
+        </button>
+      </div>
+      <a
+        href={explorerTx(result.hash)}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="mt-2 block font-mono text-[11.5px] break-all text-primary underline-offset-4 hover:underline"
+      >
+        {result.hash}
+      </a>
+      <p className="mt-1.5 text-[12px] text-faint">{t.app.receiptNote}</p>
+    </section>
+  );
+}
+
 // ------------------------------------------------------------- account panel
 
 /**
@@ -240,7 +289,7 @@ function AccountPanel({
   address: string;
   account: AccountState | null;
   busy: string | null;
-  run: (label: string, fn: () => Promise<void>) => Promise<void>;
+  run: Run;
   signTransaction: (
     xdr: string,
     opts?: { networkPassphrase?: string },
@@ -250,8 +299,9 @@ function AccountPanel({
 
   const trust = () =>
     void run('trust', async () => {
-      await openTrustline(address, signTransaction);
+      const hash = await openTrustline(address, signTransaction);
       await new Promise((r) => setTimeout(r, 3_000));
+      return { summary: t.app.trustlineOpen(ASSET_CODE), hash };
     });
 
   const fund = () =>
@@ -262,7 +312,7 @@ function AccountPanel({
     });
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-6">
+    <section className="rounded-2xl border border-border bg-card p-6 mb-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <span className="block text-[12px] text-muted-foreground">{t.app.signedInAs}</span>
@@ -321,7 +371,7 @@ function NewBill({
   address: string;
   client: SplitrClient | null;
   busy: string | null;
-  run: (label: string, fn: () => Promise<void>) => Promise<void>;
+  run: Run;
 }) {
   const { t } = useLang();
   const [group, setGroup] = useState('');
@@ -346,10 +396,13 @@ function NewBill({
         members: all,
         weights: all.map(() => 1),
       });
-      unwrap((await tx.signAndSend()).result);
+      const sent = await tx.signAndSend();
+      const id = unwrap(sent.result);
       setGroup('');
       setAmount('');
       setOthers('');
+      const hash = sent.sendTransactionResponse?.hash;
+      return hash ? { summary: t.app.billRecorded(id), hash } : undefined;
     });
 
   const ready = amount.trim() !== '' && members.length > 0 && client !== null;
@@ -428,7 +481,7 @@ function BillCard({
   me: string;
   client: SplitrClient | null;
   busy: string | null;
-  run: (label: string, fn: () => Promise<void>) => Promise<void>;
+  run: Run;
 }) {
   const { t } = useLang();
   const [part, setPart] = useState('');
@@ -443,8 +496,13 @@ function BillCard({
       const tx = amount
         ? await client.settle_part({ id: bill.id, member: me, amount })
         : await client.settle({ id: bill.id, member: me });
-      unwrap((await tx.signAndSend()).result);
+      const sent = await tx.signAndSend();
+      const moved = unwrap(sent.result);
       setPart('');
+      const hash = sent.sendTransactionResponse?.hash;
+      return hash
+        ? { summary: t.app.paid(formatPretty(moved), ASSET_CODE), hash }
+        : undefined;
     });
 
   return (
