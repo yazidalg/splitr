@@ -101,7 +101,19 @@ Never make two RPC reads that must agree (e.g. `bill()` plus `outstanding()`) �
 
 `web/src/lib/contract.ts` mirrors `src/soroban.ts` for the browser; the only real difference is that signing goes to the connected wallet instead of a held keypair. Both read `soroban/deployments.json`, so the contract id has one home.
 
-**The entire `app/` tree must stay behind the `lazy()` in `App.tsx`.** `@stellar/stellar-sdk` is bigger than the whole landing page. A static import of it, or of `app/DApp.tsx`, from anything the landing page renders will pull it into the entry chunk. `npm run web:build` should keep `index-*.js` near 288 kB, with `utils-*` (the SDK) and `client-*` as separate chunks.
+**The entire `app/` tree must stay behind the `lazy()` in `App.tsx`.** `@stellar/stellar-sdk` is bigger than the whole landing page. A static import of it, or of `app/DApp.tsx`, from anything the landing page renders will pull it into the entry chunk. `npm run web:build` should keep `index-*.js` near 290 kB, with `utils-*` (the SDK) and `client-*` as separate chunks.
+
+**The app's copy lives in `web/src/app/copy.app.ts`, not `lib/copy.ts`.** Same discipline — `en` is the schema, `id` is typed against it, nothing hardcoded in a component — but `lib/copy.ts` is imported by the landing page, so anything added there ships in the entry chunk in both languages. `t.app.*` and `t.groups.*` are read only inside `app/`; they reach components through `useAppLang()`, which merges them over the shared dictionary so one hook still serves `t.wallet.*` too. Adding an app-only string to `lib/copy.ts` costs every marketing-page visitor and nothing will fail to tell you.
+
+### Who is on a bill, and where that lives
+
+The division is deliberate: **who was there is a local fact, what was settled is a ledger fact.** Only the second has to be trustless.
+
+- `web/src/lib/groups.ts` — groups and members in `localStorage`. `Member.address` is `string | null`, because PRD §9a requires the group-then-split flow to work before anyone has a wallet, and `create_bill` takes a `Vec<Address>` that structurally cannot hold such a person. Stored data is shape-checked on read, never trusted: it is user-writable and outlives deploys.
+- `web/src/lib/billDraft.ts` — `buildRows` and `previewSplit`, kept pure and outside the component so they can be exercised without a browser and a wallet extension. Two behaviours here are invisible when wrong: the same address listed twice is dropped (the contract writes one share per member, so a duplicate silently doubles someone's portion), and a member with no wallet still takes a share.
+- The preview runs `splitByWeights` — the same engine the contract mirrors — so it is not an estimate of what will be recorded, it is that computation run early. A bill is blocked from going on chain until *every* member has an address; recording a subset would silently change everyone else's share.
+
+Names are shown on bill cards **in addition to** the address, never instead. The address is what the ledger settled with, and a local nickname must not be able to hide it.
 
 ## Conventions
 
