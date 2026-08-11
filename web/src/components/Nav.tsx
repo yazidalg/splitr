@@ -5,13 +5,24 @@ import { LangToggle } from './LangToggle.tsx';
 import { ThemeToggle } from './ThemeToggle.tsx';
 import { useLang } from '../lib/i18n.tsx';
 import { navigate, useRoute } from '../lib/useRoute.ts';
+import { useActiveSection } from '../lib/useActiveSection.ts';
 import { useWalletCta } from '../lib/useWalletCta.ts';
+
+/**
+ * The sections the nav points at, in document order — the order matters, the
+ * hook does not sort. Held at module scope so the array identity is stable
+ * across renders; the labels come from the dictionary, the ids do not.
+ */
+const SECTION_IDS = ['how', 'proof', 'faq'] as const;
 
 export function Nav() {
   const { t } = useLang();
   const route = useRoute();
   const cta = useWalletCta();
   const [open, setOpen] = useState(false);
+  // On /app none of these elements exist, so this stays null and nothing is
+  // marked — which is right, since the app renders no nav links either.
+  const active = useActiveSection(SECTION_IDS);
 
   // The anchor links only mean anything on the landing page; from /app they
   // would scroll to nothing.
@@ -19,14 +30,12 @@ export function Nav() {
   // just noise beside it.
   // No '/app' link: the wallet CTA below is the way in, and a bare link beside
   // it offered the same destination without the wallet you need once you land.
+  // Derived from SECTION_IDS rather than listed again, so a link can never
+  // point at a section the observer is not watching.
   const links =
     route === 'app'
       ? []
-      : [
-          { href: '#how', label: t.nav.how },
-          { href: '#proof', label: t.nav.proof },
-          { href: '#faq', label: t.nav.faq },
-        ];
+      : SECTION_IDS.map((id) => ({ id, href: `#${id}`, label: t.nav[id] }));
 
   /** Same-origin paths route client-side; hashes stay plain anchors. */
   const onNavClick = (href: string) => (e: React.MouseEvent) => {
@@ -95,7 +104,15 @@ export function Nav() {
                 <a
                   href={l.href}
                   onClick={onNavClick(l.href)}
-                  className="text-[13px] whitespace-nowrap text-muted-foreground transition-colors duration-300 hover:text-foreground"
+                  // Marks the section, so a screen reader is told what the
+                  // colour alone is saying to everyone else.
+                  aria-current={active === l.id ? 'true' : undefined}
+                  className={[
+                    'text-[13px] whitespace-nowrap transition-colors duration-300 hover:text-foreground',
+                    // The section you are in reads exactly as hover does: one
+                    // "this one" state, not a second thing to learn.
+                    active === l.id ? 'text-foreground' : 'text-muted-foreground',
+                  ].join(' ')}
                 >
                   {l.label}
                 </a>
