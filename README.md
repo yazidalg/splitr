@@ -372,15 +372,32 @@ zero-XLM fee — a fee-bump — has to be signed by the *sponsor*. That key cann
 live in a browser, so `api/relay.ts` is the one piece of Splitr that runs on a
 server: the member signs the call, the relay wraps it in a fee-bump and submits.
 
-It is not a general relay. It signs only for a single-operation transaction that
-invokes this project's contract, and caps the fee at 0.1 XLM. Without both checks
-it is a faucet that drains the sponsor for anyone who finds the URL. Set
+It is not a general relay. It is an endpoint on the public internet that spends
+someone else's XLM, so four things have to hold before it signs anything:
+
+| Check | What it stops |
+| ------------------------------------------- | ------------------------------------------------ |
+| One operation, invoking *this* contract | Paying for arbitrary transactions |
+| The caller holds less than 0.5 XLM | Funded accounts helping themselves to a free fee |
+| The sponsor is still above its floor | The sponsor being emptied rather than spent down |
+| No relayed call for that account in a minute | One account in a loop |
+
+Only the first of those existed at Green Belt, and it was not enough: a valid
+invocation, repeated from a funded account, was free money out of the sponsor.
+The second is the load-bearing one, because it makes abuse cost an attacker a
+genuinely empty account per stream of requests rather than nothing at all. It is
+also the check the browser already made on its own machine — `FEE_FLOOR_XLM` in
+`web/src/lib/contract.ts` — and an endpoint anyone can post to cannot take that
+on trust, so it now reaches the same conclusion from the ledger.
+
+The fee is capped at 0.1 XLM per call on top of all of that. Set
 `SPLITR_SPONSOR_SECRET` in the deployment environment; with it unset the endpoint
 returns 503 and the app simply asks people to fund their own account.
 
-The app only takes this route when the connected account holds less than 0.5 XLM.
-Everyone else pays their own fee, which is cheaper for the sponsor and one less
-moving part.
+Every refusal lives in `api/guards.ts`, apart from the I/O, because that is what
+makes it testable — `npm test` runs each one. The app only takes this route when
+the connected account holds less than 0.5 XLM; everyone else pays their own fee,
+which is cheaper for the sponsor and one less moving part.
 
 ### The landing page
 
@@ -543,12 +560,18 @@ your bid.
 
 ## Known limitations
 
-- **The relay is deployed but unproven.** `api/relay.ts` typechecks and its guard
-  logic is straightforward, but no request has ever reached it — verifying that
-  needs a deployment with `SPLITR_SPONSOR_SECRET` set and an account genuinely
-  holding zero XLM.
-- **The relay has no rate limiting.** One capped fee per call, but nothing stops a
-  caller making many. Fine for testnet; not fine anywhere near real funds.
+- **The relay's rate limit is per serverless instance.** It is held in memory,
+  because a shared store is a dependency and a bill this project does not have on
+  testnet. A caller spread across warm instances gets a multiple of the intended
+  rate, so what actually bounds the spend is the balance checks either side of
+  it, not the cooldown.
+- **The relay's network path is still unexercised.** Every refusal it makes is
+  now covered by `npm test`, but no real request has reached the deployed
+  endpoint — the fee-bump itself, and Horizon answering with a balance, have
+  never run in anger. Verifying that needs a deployment with
+  `SPLITR_SPONSOR_SECRET` set and an account genuinely holding zero XLM.
+- **The relay tracks what the sponsor has left, not what it has spent.** A floor
+  stops the account being emptied; it does not tell anyone how fast it drained.
 - **Sponsorship is never revoked.** Nothing calls `revokeSponsorship`, so a
   sponsor's reserve is locked for as long as the member exists. Fine at four
   members, not at fifty.

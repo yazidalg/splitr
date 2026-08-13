@@ -22,7 +22,7 @@ export SPLITR_PASSPHRASE=dev-testnet-passphrase   # unlocks wallet secrets; prom
 
 node src/cli.ts help          # every CLI command (or: npm run splitr -- help)
 npm run typecheck             # tsc over src/, api/, scripts/
-npm test                      # scripts/parity.ts — the split engine's TS half
+npm test                      # node --test over scripts/ — split-engine parity, relay guards
 npm run web:dev               # http://localhost:5173
 npm run web:build             # static output in web/dist
 npm run web:typecheck         # tsc over web/ + ../src/money.ts
@@ -34,7 +34,7 @@ npm run contract:deploy       # needs the `splitr-deployer` stellar identity
 cd soroban && cargo test agrees_with_money_ts   # a single test
 ```
 
-There is **no build step for `src/`** (Node executes the `.ts` files) and **no lint config**. The two `typecheck` scripts, `npm test` and `cargo test` are the entire automated gate — run all four after touching their respective trees. `npm test` is `node --test` against `scripts/parity.ts` and nothing else; there is no test framework installed, deliberately.
+There is **no build step for `src/`** (Node executes the `.ts` files) and **no lint config**. The two `typecheck` scripts, `npm test` and `cargo test` are the entire automated gate — run all four after touching their respective trees. `npm test` is `node --test scripts/*.ts`, so **every file in `scripts/` is a test file** — put a utility script anywhere else. There is no test framework installed, deliberately: what is tested here is pure decisions over values, which `node:test` covers without a dependency.
 
 ## The invariant that spans all three trees
 
@@ -105,6 +105,14 @@ Never make two RPC reads that must agree (e.g. `bill()` plus `outstanding()`) �
 **The entire `app/` tree must stay behind the `lazy()` in `App.tsx`.** `@stellar/stellar-sdk` is bigger than the whole landing page. A static import of it, or of `app/DApp.tsx`, from anything the landing page renders will pull it into the entry chunk. `npm run web:build` should keep `index-*.js` near 290 kB, with `utils-*` (the SDK) and `client-*` as separate chunks.
 
 **The app's copy lives in `web/src/app/copy.app.ts`, not `lib/copy.ts`.** Same discipline — `en` is the schema, `id` is typed against it, nothing hardcoded in a component — but `lib/copy.ts` is imported by the landing page, so anything added there ships in the entry chunk in both languages. `t.app.*` and `t.groups.*` are read only inside `app/`; they reach components through `useAppLang()`, which merges them over the shared dictionary so one hook still serves `t.wallet.*` too. Adding an app-only string to `lib/copy.ts` costs every marketing-page visitor and nothing will fail to tell you.
+
+### The fee relay (`api/`)
+
+`api/relay.ts` does the I/O; **every refusal lives in `api/guards.ts`**, which touches no request, no environment and no network so `scripts/relay-guards.ts` can run it. Add a check there, not at the call site — a guard that cannot be run is a guard nobody has checked, which is what the relay was for its first two belts.
+
+Four things have to hold before it signs: one call to this project's contract, a caller that genuinely cannot pay its own fee, a sponsor above `SPONSOR_FLOOR_XLM`, and no relayed call for that account inside `COOLDOWN_MS`. Only the first existed originally, which left the endpoint a faucet for anyone who found the URL.
+
+`FEE_FLOOR_XLM` is deliberately duplicated between `api/guards.ts` and `web/src/lib/contract.ts` — the browser uses it to decide to call the relay, the relay uses it to check that decision against the ledger, and they must stay equal. Importing across would pull the browser client and the SDK into a serverless function. The rate limit is **per serverless instance**; treat it as the cheap case only, and never as the thing bounding the spend.
 
 ### Who is on a bill, and where that lives
 
