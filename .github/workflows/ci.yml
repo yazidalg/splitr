@@ -5,8 +5,8 @@ on:
     branches: ['**']
   pull_request:
 
-# The three gates that exist locally, run on every push. There is no lint config
-# and no JS test runner, so these typechecks plus cargo test are the whole net.
+# The gates that exist locally, run on every push. There is no lint config, so
+# these typechecks, the parity test and cargo test are the whole net.
 jobs:
   typescript:
     runs-on: ubuntu-latest
@@ -19,6 +19,10 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run web:typecheck
+      # The TypeScript half of the split-engine gate. `cargo test` pins the Rust
+      # side against recorded numbers; without this, editing `src/money.ts`
+      # alone would fail nothing — tsc checks types, not values.
+      - run: npm test
       # Catches a static import of the SDK or the wallet kit creeping into the
       # landing page, which no typecheck would notice.
       - run: npm run web:build

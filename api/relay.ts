@@ -7,32 +7,49 @@
  * sponsor's key cannot live in a browser, so this is the one piece of Splitr
  * that has to run on a server.
  *
- * It is deliberately not a general relay. It signs a fee-bump only for a
- * single-operation transaction that invokes this project's contract, and only
- * up to a capped fee. Without those two checks it would be a faucet that
- * drains the sponsor for anyone who finds the URL.
+ * It is deliberately not a general relay. Four things have to hold before it
+ * signs anything, and they are all in `guards.ts` so they can be tested: the
+ * transaction is a single call to this project's contract, the caller genuinely
+ * cannot pay its own fee, the sponsor has not spent down to its floor, and that
+ * account has not just been relayed for. The first was the only one the relay
+ * used to check, which left it a faucet for anyone who found the URL: a valid
+ * invocation from a funded account, repeated, was free money out of the
+ * sponsor.
  *
- * Testnet only, and the sponsor holds testnet XLM. On mainnet this needs rate
- * limiting per account and a spend ceiling before it goes anywhere near real
- * funds.
+ * Testnet only, and the sponsor holds testnet XLM. What is still missing before
+ * this goes near real funds is a *shared* rate limit — the one here is per
+ * serverless instance — and an accounting of what it has spent over time
+ * rather than only what is left.
  */
 import {
-  Address,
   FeeBumpTransaction,
+  Horizon,
   Keypair,
   Transaction,
   TransactionBuilder,
   rpc,
-  xdr,
 } from '@stellar/stellar-sdk';
 import deployments from '../soroban/deployments.json' with { type: 'json' };
+import {
+  createLimiter,
+  sponsorIsSpent,
+  whyCallerRefused,
+  whyStructurallyRefused,
+} from './guards.ts';
 
 const CONTRACT_ID = deployments.testnet['splitr-split'].contractId;
 const RPC_URL = process.env.SPLITR_RPC ?? 'https://soroban-testnet.stellar.org';
+const HORIZON_URL = process.env.SPLITR_HORIZON ?? 'https://horizon-testnet.stellar.org';
 const NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
 
 /** 0.1 XLM. Generous for one invocation, bounded against a fee-spike drain. */
 const MAX_FEE_STROOPS = '1000000';
+
+/**
+ * Held at module scope so it survives between requests that reuse the same warm
+ * instance. That is the whole of its reach — see the note in `guards.ts`.
+ */
+const limiter = createLimiter();
 
 interface Req {
   method?: string;
@@ -79,14 +96,50 @@ export default async function handler(req: Req, res: Res): Promise<void> {
     return;
   }
 
-  const rejection = whyRefused(inner);
+  // Cheapest check first: this one needs nothing but the transaction itself.
+  const rejection = whyStructurallyRefused(inner, CONTRACT_ID);
   if (rejection) {
     res.status(403).json({ error: rejection });
     return;
   }
 
+  const sponsor = Keypair.fromSecret(secret);
+  const horizon = new Horizon.Server(HORIZON_URL);
+
+  let callerXLM: number;
+  let sponsorXLM: number;
   try {
-    const sponsor = Keypair.fromSecret(secret);
+    [callerXLM, sponsorXLM] = await Promise.all([
+      nativeBalance(horizon, inner.source),
+      nativeBalance(horizon, sponsor.publicKey()),
+    ]);
+  } catch {
+    // Fail closed. Paying while unable to see who is being paid for is the
+    // exact behaviour these checks were added to remove.
+    res.status(503).json({ error: 'Could not read balances; not relaying.' });
+    return;
+  }
+
+  const callerRejection = whyCallerRefused(callerXLM);
+  if (callerRejection) {
+    res.status(403).json({ error: callerRejection });
+    return;
+  }
+
+  if (sponsorIsSpent(sponsorXLM)) {
+    res.status(503).json({ error: 'The sponsor cannot cover any more fees.' });
+    return;
+  }
+
+  // Claimed last, so a caller refused above does not spend its own slot and
+  // find itself locked out for a minute over a transaction that never cost the
+  // sponsor anything.
+  if (!limiter.claim(inner.source, Date.now())) {
+    res.status(429).json({ error: 'Already relayed for this account; try again shortly.' });
+    return;
+  }
+
+  try {
     const bumped = TransactionBuilder.buildFeeBumpTransaction(
       sponsor,
       MAX_FEE_STROOPS,
@@ -113,34 +166,11 @@ export default async function handler(req: Req, res: Res): Promise<void> {
   }
 }
 
-/**
- * The whole guard. Anything this does not explicitly recognise is refused,
- * because the failure mode of a permissive relay is someone else's money.
- */
-function whyRefused(tx: Transaction): string | null {
-  if (tx.operations.length !== 1) {
-    return 'Only a single-operation transaction is relayed.';
-  }
-  const op = tx.operations[0];
-  if (op.type !== 'invokeHostFunction') {
-    return 'Only contract invocations are relayed.';
-  }
-
-  let target: string;
-  try {
-    const fn = op.func;
-    if (fn.switch() !== xdr.HostFunctionType.hostFunctionTypeInvokeContract()) {
-      return 'Only contract calls are relayed, not uploads or deployments.';
-    }
-    target = Address.fromScAddress(fn.invokeContract().contractAddress()).toString();
-  } catch {
-    return 'Could not read which contract this calls.';
-  }
-
-  if (target !== CONTRACT_ID) {
-    return 'This relay only pays for the Splitr contract.';
-  }
-  return null;
+/** An account's XLM, or a throw if Horizon cannot say. */
+async function nativeBalance(horizon: Horizon.Server, publicKey: string): Promise<number> {
+  const account = await horizon.loadAccount(publicKey);
+  const native = account.balances.find((b) => b.asset_type === 'native');
+  return Number(native?.balance ?? '0');
 }
 
 function safeParse(s: string): unknown {

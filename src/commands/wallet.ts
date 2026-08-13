@@ -1,4 +1,4 @@
-import { Keypair, Operation } from '@stellar/stellar-sdk';
+import { Asset, Keypair, Operation } from '@stellar/stellar-sdk';
 import {
   loadWallets,
   saveWallets,
@@ -7,7 +7,8 @@ import {
   getPassphrase,
   keypairFor,
 } from '../store.ts';
-import { requireAssetConfig, assetFrom } from '../config.ts';
+import { requireAssetConfig, assetFrom, BASE_RESERVE_XLM } from '../config.ts';
+import { planUnsponsor, whyUnsponsorRefused } from '../sponsorship.ts';
 import {
   snapshot,
   fundWithFriendbot,
@@ -193,5 +194,63 @@ export async function walletOnboard(label: string, flags: Record<string, string>
   console.log(
     `\n"${label}" holds no XLM and still cannot pay a fee — settle for them with` +
       `\n  split settle <id> --member ${label} --fee-source ${sponsorLabel}`,
+  );
+}
+
+/**
+ * Hands a member's reserves back to the sponsor.
+ *
+ * The other half of `wallet onboard`, and until now the missing one: reserves
+ * went out and never came back, so a sponsor's XLM was locked for as long as
+ * the member existed. The same account funds the next onboarding, which makes
+ * this a ceiling on how many members a group can bring on, not just tidiness.
+ *
+ * Only the sponsor signs. Unlike the sponsorship sandwich, revocation is the
+ * sponsor releasing something it pays for, so the member's authorisation is not
+ * required — but their *balance* is, because the reserve lands on them.
+ * `whyUnsponsorRefused` says so before anything is signed.
+ */
+export async function walletUnsponsor(label: string, flags: Record<string, string>): Promise<void> {
+  if (!label) throw new Error('Usage: wallet unsponsor <label> [--sponsor <label>]');
+
+  const sponsorLabel = flags.sponsor ?? 'issuer';
+  const member = findWallet(label);
+  const sponsor = findWallet(sponsorLabel);
+  if (member.publicKey === sponsor.publicKey) throw new Error('A wallet cannot sponsor itself.');
+
+  const snap = await snapshot(member.publicKey);
+  const plan = planUnsponsor(snap, sponsor.publicKey, BASE_RESERVE_XLM);
+  const refusal = whyUnsponsorRefused(snap, plan, { member: label, sponsor: sponsorLabel });
+  if (refusal) throw new Error(refusal);
+
+  const sponsorKp = await keypairFor(sponsor);
+  // Trustlines first, then the account, mirroring the order they were sponsored
+  // in. Each revocation raises the member's own floor, so the last one is the
+  // binding constraint either way — the order is for legibility on the ledger.
+  const ops = [
+    ...plan.trustlines.map((line) =>
+      Operation.revokeTrustlineSponsorship({
+        account: member.publicKey,
+        asset: new Asset(line.code, line.issuer!),
+      }),
+    ),
+    ...(plan.account ? [Operation.revokeAccountSponsorship({ account: member.publicKey })] : []),
+  ];
+
+  const hash = await submit(sponsorKp, ops);
+  const after = await snapshot(member.publicKey);
+  const sponsorAfter = await snapshot(sponsor.publicKey);
+
+  console.log(`"${sponsorLabel}" no longer sponsors "${label}"`);
+  console.log(`  ${explorerTx(hash)}`);
+  console.log(
+    `  released  ${plan.releasedXLM} XLM of reserve across ${plan.entries} ` +
+      `entr${plan.entries === 1 ? 'y' : 'ies'}`,
+  );
+  console.log(
+    `  ${label.padEnd(9)} floor ${after.minBalanceXLM} XLM · spendable ${after.spendableXLM.toFixed(4)} XLM`,
+  );
+  console.log(
+    `  ${sponsorLabel.padEnd(9)} floor ${sponsorAfter.minBalanceXLM} XLM · spendable ${sponsorAfter.spendableXLM.toFixed(4)} XLM`,
   );
 }

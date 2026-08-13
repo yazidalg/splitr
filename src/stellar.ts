@@ -16,6 +16,8 @@ export interface BalanceLine {
   issuer: string | null;
   balance: string;
   limit: string | null;
+  /** Who pays this trustline's reserve, if it is not the holder. */
+  sponsor: string | null;
 }
 
 export interface AccountSnapshot {
@@ -26,6 +28,11 @@ export interface AccountSnapshot {
   sponsoring: number;
   /** Reserves someone else is paying on this account's behalf. */
   sponsored: number;
+  /**
+   * Who pays this account's own base reserve, if it is not the account. Counts
+   * and totals cannot answer "hand it back to whom" — that needs the identity.
+   */
+  sponsor: string | null;
   balances: BalanceLine[];
   /** (2 + subentries + sponsoring - sponsored) * base reserve. */
   minBalanceXLM: number;
@@ -35,9 +42,15 @@ export interface AccountSnapshot {
 export async function snapshot(publicKey: string): Promise<AccountSnapshot> {
   try {
     const acc = await server.loadAccount(publicKey);
+    // Horizon reports `sponsor` on the account and on each sponsored balance,
+    // but the SDK's types predate it — the same reason `num_sponsoring` is read
+    // through a cast below.
+    const sponsorOf = (v: unknown): string | null =>
+      (v as { sponsor?: string })?.sponsor ?? null;
+
     const balances: BalanceLine[] = acc.balances.map((b) => {
       if (b.asset_type === 'native') {
-        return { code: 'XLM', issuer: null, balance: b.balance, limit: null };
+        return { code: 'XLM', issuer: null, balance: b.balance, limit: null, sponsor: null };
       }
       const line = b as Extract<typeof b, { asset_code: string }>;
       return {
@@ -45,6 +58,7 @@ export async function snapshot(publicKey: string): Promise<AccountSnapshot> {
         issuer: line.asset_issuer,
         balance: line.balance,
         limit: 'limit' in line ? (line.limit as string) : null,
+        sponsor: sponsorOf(line),
       };
     });
     const native = Number(balances.find((b) => b.code === 'XLM')?.balance ?? '0');
@@ -63,6 +77,7 @@ export async function snapshot(publicKey: string): Promise<AccountSnapshot> {
       subentries: acc.subentry_count,
       sponsoring,
       sponsored,
+      sponsor: sponsorOf(acc),
       balances,
       minBalanceXLM: minBalance,
       spendableXLM: Math.max(0, native - minBalance),
@@ -75,6 +90,7 @@ export async function snapshot(publicKey: string): Promise<AccountSnapshot> {
         subentries: 0,
         sponsoring: 0,
         sponsored: 0,
+        sponsor: null,
         balances: [],
         minBalanceXLM: 0,
         spendableXLM: 0,
