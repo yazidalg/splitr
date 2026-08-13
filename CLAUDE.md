@@ -21,7 +21,8 @@ npm install
 export SPLITR_PASSPHRASE=dev-testnet-passphrase   # unlocks wallet secrets; prompts if unset
 
 node src/cli.ts help          # every CLI command (or: npm run splitr -- help)
-npm run typecheck             # tsc over src/**/*.ts only
+npm run typecheck             # tsc over src/, api/, scripts/
+npm test                      # scripts/parity.ts — the split engine's TS half
 npm run web:dev               # http://localhost:5173
 npm run web:build             # static output in web/dist
 npm run web:typecheck         # tsc over web/ + ../src/money.ts
@@ -33,7 +34,7 @@ npm run contract:deploy       # needs the `splitr-deployer` stellar identity
 cd soroban && cargo test agrees_with_money_ts   # a single test
 ```
 
-There is **no build step for `src/`** (Node executes the `.ts` files) and **no lint config and no JS/TS test runner**. The two `typecheck` scripts and `cargo test` are the entire automated gate — run all three after touching their respective trees.
+There is **no build step for `src/`** (Node executes the `.ts` files) and **no lint config**. The two `typecheck` scripts, `npm test` and `cargo test` are the entire automated gate — run all four after touching their respective trees. `npm test` is `node --test` against `scripts/parity.ts` and nothing else; there is no test framework installed, deliberately.
 
 ## The invariant that spans all three trees
 
@@ -42,7 +43,7 @@ There is **no build step for `src/`** (Node executes the `.ts` files) and **no l
 - `src/money.ts` — `BigInt`, used by the CLI *and* imported directly by the landing page's hero calculator (`web/src/lib/split.ts`).
 - `soroban/contracts/splitr-split/src/lib.rs` — `i128`, same algorithm including the tie-break-by-index.
 
-`soroban/.../src/test.rs::agrees_with_money_ts` pins the cases both must produce identically. **Changing the algorithm in one place without the other is the single easiest way to break this repo.** Amounts everywhere are integer counts of 1e-7 (Stellar's precision) — never floats, and the shares always sum back to the total exactly.
+The same cases are pinned from both ends, and both are needed: `soroban/.../src/test.rs::agrees_with_money_ts` runs them through the contract, `scripts/parity.ts` (`npm test`) runs them through the TypeScript engine. **Changing the algorithm in one place without the other is the single easiest way to break this repo.** Keep the two case lists identical — adding a case to one without the other quietly reopens the gap they exist to close, since `cargo test` never learns TypeScript changed and `tsc` checks types, not values. Amounts everywhere are integer counts of 1e-7 (Stellar's precision) — never floats, and the shares always sum back to the total exactly.
 
 Two consequences for `src/money.ts` specifically: it must stay dependency-free and browser-safe (the web bundle imports it across the Vite root, which is why `web/vite.config.ts` sets `server.fs.allow: ['..']` and `web/tsconfig.json` includes `../src/money.ts`).
 
