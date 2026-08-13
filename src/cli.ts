@@ -8,6 +8,7 @@ import {
   walletBalance,
   walletTrust,
   walletOnboard,
+  walletUnsponsor,
 } from './commands/wallet.ts';
 import { assetInit, assetIssue, assetShow } from './commands/asset.ts';
 import { splitCreate, splitList, splitSettle, splitReconcile } from './commands/split.ts';
@@ -25,6 +26,9 @@ splitr — stablecoin bill splitting on Stellar (White Belt slice)
   wallet onboard <label> [--sponsor <label>]
                                    create the account AND its trustline with
                                    sponsored reserves — the member holds 0 XLM
+  wallet unsponsor <label> [--sponsor <label>]
+                                   hand those reserves back; needs the member to
+                                   hold enough XLM to carry them
 
   asset init [--code IDRX]         stand up the settlement asset + issuer
   asset issue --to <label|G…address> --amount <n>
@@ -117,6 +121,8 @@ async function main(): Promise<void> {
       return walletTrust(rest[0]);
     case 'wallet onboard':
       return walletOnboard(rest[0], flags);
+    case 'wallet unsponsor':
+      return walletUnsponsor(rest[0], flags);
 
     case 'asset init':
       return assetInit(flags);

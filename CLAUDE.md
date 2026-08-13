@@ -56,6 +56,8 @@ Two consequences for `src/money.ts` specifically: it must stay dependency-free a
 - `stellar.ts` — Horizon client, `snapshot()` (balances + reserve floor), `submit()` (build/sign/send), `bidFee()` (p90×2 capped at 0.01 XLM), and `describeSubmitError()` which maps Horizon result codes to actionable hints via the `HINTS` table. Add a hint there rather than handling a result code at a call site.
   - `submit()` takes `cosigners` (operations whose source differs from the transaction source) and `feeSource` (wraps in a fee-bump so a zero-XLM account can transact).
   - The reserve floor is `(2 + subentries + numSponsoring - numSponsored) * baseReserve`. Do not simplify it back to `2 + subentries`: sponsored members legitimately hold zero XLM, and dropping those terms tells them they need 1.5.
+  - **`numSponsored` and `numSponsoring` count reserve *units*, not ledger entries**, and an account's own entry is worth **two** of them — the `2` in that formula. An onboarded member (account + one trustline) reads `num_sponsored: 3`, not 2. Anything subtracting from those fields has to convert first; `planUnsponsor` in `src/sponsorship.ts` is the worked example, and got it wrong before a live account disagreed with the unit tests.
+- `sponsorship.ts` — pure arithmetic for handing a sponsored reserve back: which entries belong to which sponsor, and whether the member can carry them once revoked. Kept out of `commands/wallet.ts` so `scripts/sponsorship.ts` can run the refusals. A revoked reserve lands on the account holding the entry, so this is not callable at will — a member at zero XLM has to be funded first, and saying which account to top up beats forwarding `op_low_reserve`.
 
 Three behaviours are load-bearing product promises, not implementation details:
 

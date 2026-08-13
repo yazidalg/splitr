@@ -137,6 +137,7 @@ A member who owns nothing at all:
 ```bash
 node src/cli.ts wallet onboard dina --sponsor issuer
 node src/cli.ts split settle <id> --member dina --fee-source issuer
+node src/cli.ts wallet unsponsor dina --sponsor issuer   # once dina can carry it
 ```
 
 `node src/cli.ts help` lists every command.
@@ -365,6 +366,37 @@ and understated the sponsor's. The formula is
 `(2 + subentries + numSponsoring - numSponsored) * baseReserve`; `dina` now reads
 a floor of 0 and the issuer 2.5.
 
+### Giving the reserve back
+
+Reserves went out and never came back, which made the sponsor's balance a
+one-way ratchet — and that account also funds the *next* onboarding, so it was a
+ceiling on how many members a group could bring on at all.
+
+```bash
+node src/cli.ts wallet unsponsor dina --sponsor issuer
+```
+
+Only the sponsor signs, because revocation releases something the sponsor pays
+for. But the member's *balance* decides whether it may happen: a revoked reserve
+falls back onto the account holding the entry, so a member still holding zero
+cannot take theirs back — the network would refuse the whole transaction.
+Sponsorship is not a loan callable at will; it is released once the member can
+carry it. `src/sponsorship.ts` says so before anything is signed, and names the
+account to top up and by how much, which `op_low_reserve` does not.
+
+Verified on testnet with a throwaway member. Onboarding moved the issuer's floor
+from 4 to 5.5 XLM; revoking moved it back to 4 and left the member carrying 1.5
+themselves. Horizon then reports `num_sponsored: 0` and no sponsor on either
+entry. Run it twice and the second is refused rather than paid for again.
+
+**A units bug this surfaced,** and the live check is what caught it — the unit
+tests had agreed with the mistake. `num_sponsored` counts reserve *units*, not
+ledger entries, and an account's own entry is worth **two** of them: it is the
+`2` in the formula above. An onboarded member therefore reads `num_sponsored: 3`
+for two sponsored entries. Counting entries made `wallet unsponsor` report 1 XLM
+released instead of 1.5, and tell a treasurer to send 1 XLM when the network was
+about to demand 1.5 — a refusal, at the moment they were trying to fix one.
+
 ### Reaching the app with no XLM
 
 Sponsored reserves put a member on-chain owning nothing, but Stellar's answer to a
@@ -572,9 +604,9 @@ your bid.
   `SPLITR_SPONSOR_SECRET` set and an account genuinely holding zero XLM.
 - **The relay tracks what the sponsor has left, not what it has spent.** A floor
   stops the account being emptied; it does not tell anyone how fast it drained.
-- **Sponsorship is never revoked.** Nothing calls `revokeSponsorship`, so a
-  sponsor's reserve is locked for as long as the member exists. Fine at four
-  members, not at fifty.
+- **Nothing prompts a hand-back.** `wallet unsponsor` exists, but no one is told
+  when a member has become able to carry their own reserves — an operator has to
+  think to look. At fifty members that wants a report, not a habit.
 - **The CLI still holds keys**, which is correct for an operator tool and wrong
   for anything a member touches. The web app never sees a secret.
 - **Mainnet is gated on a real IDR anchor**, which the brief defers to "future."
