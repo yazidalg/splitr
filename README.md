@@ -1,151 +1,369 @@
 # Splitr
 
-**Stablecoin bill splitting on Stellar.** Split a bill with friends, settle in a
-Rupiah-pegged token, and prove who paid from the ledger instead of a screenshot.
+**Splitr** — Stablecoin Bill Splitting on Stellar, Settled and Proven On-Chain
 
 - **Repository:** https://github.com/yazidalg/splitr
 - **Contract (testnet):** [`CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD`](https://stellar.expert/explorer/testnet/contract/CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD)
 - **Network:** Stellar testnet
 - **Demo video:** _to add_
 
-### Contract interactions on testnet
+## Project Description
 
-Both resolve on a public explorer as `invoke_host_function` against the contract
-above. Bill #6, recorded and settled in full:
-
-| What | Transaction |
-| ----------------------------------- | ----------------------------------------------------------- |
-| `create_bill` — 30,000 IDRX, 3 ways | [`f7026078…cec5f310`](https://stellar.expert/explorer/testnet/tx/f70260783286ecefae5365404d677af4e514dd2df83e358114415015cec5f310) |
-| `settle_part` — the last share | [`e6d52e7f…dc9a62a4`](https://stellar.expert/explorer/testnet/tx/e6d52e7f1575e6606cd5996bc620282b3127d6d3e53e16e976af5d64dc9a62a4) |
-
-The contract computed the three shares itself; the CLI only passed the total and
-the members. The settlement moved IDRX through the asset's Stellar Asset Contract
-in the same invocation that recorded it, which is why there is one hash and not
-two.
-
----
-
-## What Splitr is
-
-Someone fronts the bill for dinner, and then spends a week chasing four people
-for their share. The transfers arrive in different apps, at different times, and
-the only record that anyone paid is a screenshot in a group chat — which proves
+Splitr is a bill-splitting application built on the Stellar blockchain using the
+Soroban SDK. It solves an ordinary problem that ordinary apps serve badly:
+someone fronts the bill for dinner, then spends a week chasing four people for
+their share. The transfers arrive in different apps, at different times, and the
+only record that anyone paid is a screenshot in a group chat — which proves
 nothing and can be edited.
 
-Splitr replaces that record with the ledger. A bill is recorded on chain, each
-member's share is computed by the contract, and settling a share moves the money
-and writes the record in the **same transaction**. There is no "mark as paid"
-button, because there is no state that could disagree with what actually moved.
+Splitr replaces that record with the ledger. A bill is recorded on chain, the
+smart contract computes each member's share itself, and settling a share moves
+the money and writes the record **in the same invocation**. There is no "mark as
+paid" button, because there is no state that could disagree with what actually
+moved.
 
-### What it does
+The system is deliberately more than one contract call. It is a complete
+settlement path: a CLI for the operator, a landing page, a browser dApp that
+never touches a private key, sponsored onboarding for members who own nothing,
+and a fee relay so those members can still transact. Settlement happens in
+`IDRX`, an IDR-pegged token this project issues on testnet, because the story it
+serves is a Rupiah one.
 
-- **Computes the split.** Even or weighted, using a largest-remainder algorithm
-  in integer units of 1e-7 — Stellar's own precision. Shares always sum back to
-  the total exactly; a 100,000 bill across three people yields
-  `33333.3333334 / 33333.3333333 / 33333.3333333`, never a lost stroop.
-- **Records the bill on chain.** A Soroban contract stores the bill and its
-  shares, and computes the shares itself rather than trusting the numbers the
-  creator typed.
-- **Settles atomically.** Payment moves through the asset's Stellar Asset
-  Contract inside the invocation that records it.
-- **Proves payment from history.** The classic path (`split`) carries a
-  `splitr:<id>` memo on every payment and rebuilds who-paid-what by replaying
-  Horizon, so settling twice pays nothing the second time.
-- **Onboards members holding zero XLM.** Sponsored reserves create the account
-  and its trustline; a fee relay bumps the fee so a member with an empty wallet
-  can still transact.
-- **Speaks Indonesian and English**, with number formatting to match.
+## Project Vision
 
-### What is built
+Our vision is to make "who has paid" a question the ledger answers rather than
+one people argue about:
 
-The [product brief](context/Splitr%20Product%20Idea%20Brief.pdf) stages the
-project in belts. This repository covers Level 1 through Level 4:
+* **Ending Payment Disputes**: Replacing screenshots and memory with a record
+  neither party can edit
+* **Computing Shares On-Chain**: Having the contract calculate the split, so
+  whoever created the bill cannot quietly give themselves a smaller share
+* **Making Settlement Atomic**: Moving the asset and recording the payment in one
+  invocation, so the transfer and the record can never disagree
+* **Removing the Onboarding Wall**: Letting a member join and transact holding
+  zero XLM, through sponsored reserves and fee-bumps
+* **Keeping Custody With the User**: The web app never sees a secret key; members
+  bring their own wallet
+* **Serving a Real Currency Story**: Building around Rupiah-denominated
+  settlement rather than a generic stablecoin demo
 
-| Level | Belt | What it added |
-| ----- | ------ | ------------------------------------------------------------------ |
-| 1 | White | Wallets, an issued settlement asset, real on-chain payments, ledger reconciliation |
-| 2 | Yellow | The Soroban contract, deployed to testnet, plus browser wallet connection |
-| 3 | Orange | The mini dApp at `/app`: partial settlement, per-member bill index, live events |
-| 4 | Green | Sponsored onboarding and a fee relay, so a member with no XLM can use the app |
+We envision group finance — arisan, shared households, trips, team lunches —
+where the proof of payment is public, portable, and does not depend on trusting
+the app that recorded it.
 
-### The stack
+## Key Features
 
-| Path | What it is | Toolchain |
-| ---------- | ----------------------------------------------------- | ------------------------------------ |
-| `src/` | The CLI — wallets, asset, splits, contract-backed bills | Node 24+ running TypeScript natively |
-| `web/` | Landing page (`/`) and the dApp (`/app`) | Vite 8 + React 19 + Tailwind 4 |
-| `soroban/` | The on-chain split contract, in Rust | Cargo + the `stellar` CLI |
-| `api/` | The fee relay — the only piece that runs on a server | Vercel serverless function |
+### 1. **On-Chain Bill Creation**
 
-Everything runs against **Stellar testnet**. The settlement asset is `IDRX`, an
-IDR-pegged test token this repo issues itself.
+* Record a bill through the Soroban smart contract
+* Specify a group name, settlement asset, total, members, and weights
+* The **contract** computes every share; the client only supplies the inputs
+* The payer's own share is marked settled on creation — they fronted the money
+* Each member is indexed, so "my bills" is one call rather than a scan
 
----
+### 2. **Exact Integer Splitting**
 
-## Running it locally
+* Largest-remainder algorithm in integer units of 1e-7, Stellar's own precision
+* Shares always sum back to the total exactly — never a lost stroop
+* Equal or weighted splits (`2:1:1` for the person who ordered two mains)
+* Deterministic tie-break by index, so every machine produces the same result
+* Implemented **twice** — TypeScript and Rust — and pinned by tests on both sides
 
-### Requirements
+### 3. **Atomic Settlement**
 
-- **Node 24 or newer** — it executes the TypeScript in `src/` directly, so there
-  is no build step.
-- **Rust and the `stellar` CLI** — only if you want to build or test the
-  contract. The deployed contract works without them.
+* Settling calls the contract, which transfers through the asset's Stellar Asset
+  Contract in the same invocation that records the payment
+* Partial settlement is supported: pay half today, the rest later
+* Overpayment is refused rather than clamped
+* The payer cannot settle with themselves; a stranger cannot settle at all
+* Either both the transfer and the record happened, or neither did
 
-### Install
+### 4. **Ledger-Based Reconciliation**
+
+* A second, contract-free path settles with classic payments carrying a
+  `splitr:<id>` memo
+* `split reconcile` rebuilds who-paid-what by replaying Horizon payment history
+* No local `paid` flag exists anywhere — adding one would defeat the core claim
+* `split settle` reconciles before paying, so running it twice pays nothing the
+  second time
+
+### 5. **Onboarding a Member Who Owns Nothing**
+
+* `wallet onboard` creates the account and its trustline inside a sponsorship
+  sandwich, so the member starts at zero XLM
+* A fee-bump lets that zero-balance member sign and submit transactions
+* `api/relay.ts` does the same for the browser, guarded so it is not a faucet
+* `wallet unsponsor` hands the reserves back once the member can carry them
+
+### 6. **Non-Custodial Web App**
+
+* `/app` connects Freighter, xBull, Albedo, Lobstr, Hana or Rabet
+* The page never sees a secret key — signing happens inside the wallet
+* Bilingual (English and Indonesian) with locale-correct number formatting
+* Light and dark themes, and a layout that holds down to phone widths
+* The chain client is lazily loaded, so a visitor who only reads the marketing
+  page downloads none of it
+
+## The Bill Data Structure
+
+Each bill recorded by the contract contains:
+
+| Field    | Type         | Description                                     |
+| -------- | ------------ | ----------------------------------------------- |
+| `id`     | `u32`        | Sequential identifier, assigned by the contract |
+| `group`  | `String`     | What the bill was for                           |
+| `asset`  | `Address`    | Stellar Asset Contract of the settlement asset  |
+| `payer`  | `Address`    | Who fronted the money                           |
+| `total`  | `i128`       | Total, in units of 1e-7 of the asset            |
+| `shares` | `Vec<Share>` | One entry per member                            |
+
+Each `Share` within a bill:
+
+| Field    | Type      | Description                               |
+| -------- | --------- | ----------------------------------------- |
+| `member` | `Address` | Who owes this share                       |
+| `weight` | `u32`     | Relative weight used to compute the share |
+| `owes`   | `i128`    | What the contract calculated they owe     |
+| `paid`   | `i128`    | What they have settled so far             |
+
+Example bill, read back off testnet:
+
+```text
+Bill #6 · Bakso Malam
+  total 30,000 IDRX, fronted by GASI…ZX7T
+
+  PAID  GASI…ZX7T  weight  1  owes  10,000  paid  10,000
+  PAID  GA3D…H4LM  weight  1  owes  10,000  paid  10,000
+  PAID  GD36…VN4L  weight  1  owes  10,000  paid  10,000
+
+Settled in full — this is the contract's own record, not a reconstruction.
+```
+
+Amounts are integers throughout. A 100,000 bill split three ways yields
+`33333.3333334 / 33333.3333333 / 33333.3333333` — the extra stroop goes to the
+first largest remainder, and the three sum back to exactly 100,000.
+
+## Smart Contract Functions
+
+The contract exports seven functions.
+
+### `create_bill()`
+
+Records a bill and computes what each member owes.
+
+```text
+payer, group, asset, total, members, weights
+```
+
+Requires the payer's authorisation. Refuses fewer than two members, a weight
+count that does not match the member count, a non-positive total, or a payer who
+is not on the bill. Returns the new bill id and emits a `Created` event.
+
+### `settle()`
+
+Pays off the caller's entire remaining share.
+
+```text
+id, member
+```
+
+Delegates to `settle_part` with whatever is left. Returns the amount transferred.
+
+### `settle_part()`
+
+Pays part of the caller's share.
+
+```text
+id, member, amount
+```
+
+Requires the member's authorisation, transfers through the asset's Stellar Asset
+Contract, updates `paid`, and emits a `Settled` event — all in one invocation.
+Refuses overpayment rather than silently taking less than was asked for.
+
+### `bills_for()`
+
+Returns the bill ids an address is a member of.
+
+```text
+member
+```
+
+The index exists so "my bills" costs one call. Without it, the app would read
+every bill in the contract and filter client-side, on every load.
+
+### `bill()`
+
+Returns one full bill by id, including every share.
+
+```text
+id
+```
+
+### `outstanding()`
+
+Returns what the group still owes the payer, in units of 1e-7.
+
+```text
+id
+```
+
+### `count()`
+
+Returns how many bills the contract has recorded.
+
+### Contract Errors
+
+| # | Error               | Meaning                                        |
+| - | ------------------- | ---------------------------------------------- |
+| 1 | `TooFewMembers`     | A bill needs at least two participants         |
+| 2 | `WeightMismatch`    | One weight per member, no more and no less     |
+| 3 | `NotPositive`       | Totals and weights must be above zero          |
+| 4 | `PayerNotMember`    | The payer has to be one of the members         |
+| 5 | `NoSuchBill`        | No bill with that id                           |
+| 6 | `NotAMember`        | That address is not on this bill               |
+| 7 | `AlreadySettled`    | Nothing left to pay                            |
+| 8 | `PayerCannotSettle` | The payer fronted the bill; no self-settlement |
+| 9 | `Overpayment`       | A payment larger than what is still owed       |
+
+`settle` and `settle_part` refuse for the same reasons in the same order, and a
+test asserts it, so the same mistake cannot report two different errors.
+
+## Contract Details
+
+* **Contract Address:** `CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD`
+* **Wasm Hash:** `c96ac11348362039a1e7f0258f7a7e981d5eed15f82353dbc3afbf4f1560081a`
+* **Network:** Stellar testnet
+* **Language:** Rust
+* **SDK:** Soroban SDK
+* **Size:** 12.5 KB wasm, 7 exported functions
+* **Settlement asset:** `IDRX`, issued by `GCORFTFD…QZCO`, reached through its
+  Stellar Asset Contract `CDGV6KHURXJXLMIPPI7VCSVQTLAGANUIWMF7WHPVFKH2MJFCUZ3YCTSD`
+
+The deployed address is committed in `soroban/deployments.json`, on purpose: a
+fresh clone must be able to reach the contract this project actually runs
+against. Override it at runtime with `SPLITR_CONTRACT_ID`.
+
+Events are published through `#[contractevent]`, which places `Created` and
+`Settled` in the contract's SEP-48 spec. That is what lets `bill watch` decode
+them with field names taken from the deployed wasm rather than from a copy kept
+in TypeScript. The bill `id` is an indexed topic, so an indexer can follow one
+bill without reading the whole contract's history.
+
+## Architecture
+
+```text
+┌───────────────────────────┐      ┌───────────────────────────┐
+│   Landing page   ( / )    │      │      CLI   (src/)         │
+│   hero calculator runs    │      │   wallets · asset ·       │
+│   splitByWeights (TS)     │      │   splits · bills          │
+└─────────────┬─────────────┘      └─────────────┬─────────────┘
+              │                                  │
+┌─────────────┴─────────────┐                    │ held keypair
+│      dApp   ( /app )      │                    │ signs
+│  browser wallet signs;    │                    │
+│  no secret key on page    │                    │
+└─────────────┬─────────────┘                    │
+              │                                  │
+              │   ┌─────────────────────────┐    │
+              ├──▶│    api/relay.ts         │    │
+              │   │  fee-bump for a member  │    │
+              │   │  holding zero XLM       │    │
+              │   └────────────┬────────────┘    │
+              │                │                 │
+              ▼                ▼                 ▼
+┌──────────────────────────────────────────────────────────────┐
+│           Soroban contract   (splitr-split)                  │
+│                                                              │
+│   create_bill()   settle()      settle_part()                │
+│   bills_for()     bill()        outstanding()    count()     │
+│                                                              │
+│   split_by_weights (i128) — mirrors src/money.ts (BigInt)    │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ transfer through the asset's
+                               │ Stellar Asset Contract
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│                     Stellar testnet                          │
+│                                                              │
+│   IDRX balances  ·  payments carrying memo splitr:<id>       │
+│   sponsored reserves  ·  fee-bumps  ·  contract events       │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Four codebases sit side by side:
+
+| Path       | What it is                                             | Toolchain                            |
+| ---------- | ------------------------------------------------------ | ------------------------------------ |
+| `src/`     | The CLI — wallets, asset, splits, contract-backed bills | Node 24+ running TypeScript natively |
+| `web/`     | Landing page (`/`) and the dApp (`/app`)               | Vite 8 + React 19 + Tailwind 4       |
+| `soroban/` | The on-chain split contract, in Rust                   | Cargo + the `stellar` CLI            |
+| `api/`     | The fee relay — the only piece that runs on a server    | Vercel serverless function           |
+
+## Getting Started
+
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/yazidalg/splitr.git
 cd splitr
-npm install
 ```
 
-One environment variable unlocks the encrypted wallet secrets. Set it, or the
-CLI will prompt for it:
+### 2. Install Dependencies
+
+Requires **Node 24 or newer** — it executes the TypeScript in `src/` directly, so
+there is no build step.
 
 ```bash
-export SPLITR_PASSPHRASE=dev-testnet-passphrase
+npm install
+export SPLITR_PASSPHRASE=dev-testnet-passphrase   # unlocks wallet secrets
 ```
 
-### 1. The web app
+The passphrase decrypts the wallet secrets stored under `.splitr/`. The CLI
+prompts for it if unset.
+
+### 3. Run the Web App
 
 ```bash
 npm run web:dev
 ```
 
-- Landing page: http://localhost:5173
-- The dApp: http://localhost:5173/app
+* Landing page: http://localhost:5173
+* The dApp: http://localhost:5173/app
 
-Open `/app`, connect a wallet (Freighter, xBull, Albedo, Lobstr, Hana or Rabet),
-and you are talking to the contract already deployed on testnet. The page never
-sees a secret key.
+Open `/app`, connect a wallet, and you are talking to the contract already
+deployed on testnet. Nothing has to be deployed first.
 
-To get a testnet account funded and holding IDRX, run the CLI loop below and
-issue to your browser wallet's address.
+### 4. Run the CLI
 
-### 2. The CLI — the full loop
+Stand up an asset and some wallets:
 
 ```bash
-node src/cli.ts asset init                        # settlement asset + issuer account
+node src/cli.ts asset init                        # settlement asset + issuer
 node src/cli.ts wallet create alice               # ...repeat for bob, citra
-node src/cli.ts wallet fund alice                 # Friendbot creates the account on-chain
-node src/cli.ts wallet trust alice                # trustline to IDRX (costs 0.5 XLM reserve)
+node src/cli.ts wallet fund alice                 # Friendbot creates the account
+node src/cli.ts wallet trust alice                # trustline to IDRX
 node src/cli.ts asset issue --to bob --amount 500000
-
-node src/cli.ts split create --group "Dinner Sudirman" \
-  --payer alice --amount 300000 --members alice,bob,citra
-node src/cli.ts split settle <id>
-node src/cli.ts split reconcile <id>
 ```
 
-The same bill, recorded on the contract instead:
+The contract-backed path:
 
 ```bash
 node src/cli.ts bill create --group "Nasi Padang" --payer alice \
   --amount 300000 --members alice,bob,citra
-node src/cli.ts bill settle 1 --member bob            # or --amount 10000 for part of it
-node src/cli.ts bill mine bob                         # bills this member is on
+node src/cli.ts bill settle 1 --member bob        # or --amount 10000 for part
+node src/cli.ts bill mine bob                     # bills this member is on
 node src/cli.ts bill show 1
-node src/cli.ts bill watch                            # follow contract events as ledgers close
+node src/cli.ts bill watch                        # follow events as ledgers close
+```
+
+The classic-payment path, reconciled from the ledger:
+
+```bash
+node src/cli.ts split create --group "Dinner Sudirman" \
+  --payer alice --amount 300000 --members alice,bob,citra
+node src/cli.ts split settle <id>
+node src/cli.ts split reconcile <id>
 ```
 
 A member who owns nothing at all:
@@ -158,7 +376,7 @@ node src/cli.ts wallet unsponsor dina --sponsor issuer   # once dina can carry i
 
 `node src/cli.ts help` lists every command.
 
-### 3. The contract
+### 5. Build and Test the Contract
 
 `cargo` must be on your PATH. With Homebrew's rustup it is not by default — the
 shims live in `$(brew --prefix rustup)/bin`:
@@ -171,9 +389,10 @@ npm run contract:build         # 12.5 KB wasm, 7 exported functions
 npm run contract:deploy        # needs the `splitr-deployer` stellar identity
 ```
 
-Redeploying mints a new contract address; record it in `soroban/deployments.json`.
+Redeploying mints a new contract address; record it in `soroban/deployments.json`
+in the same commit, or the recorded wasm hash stops matching the source.
 
-### Checks
+### 6. Run the Checks
 
 There is no lint config. These four commands are the entire automated gate, and
 CI runs all of them on every push:
@@ -181,20 +400,20 @@ CI runs all of them on every push:
 ```bash
 npm run typecheck        # tsc over src/, api/, scripts/
 npm run web:typecheck    # tsc over web/
-npm test                 # the split engine against the contract's own cases
-npm run contract:test    # cargo test — 16 tests
+npm test                 # 17 tests — split engine, relay guards, sponsorship
+npm run contract:test    # 16 tests — the contract
 ```
 
-CI additionally builds the site and fails if the entry chunk grows past 340 KB —
-that catches a static import of the Stellar SDK or the wallet kit creeping into
+CI additionally builds the site and fails if the entry chunk grows past 340 KB.
+That catches a static import of the Stellar SDK or the wallet kit creeping into
 the landing page, which no typecheck would notice.
 
-### Environment variables
+### Environment Variables
 
 All optional. Defaults point at testnet and at the deployed contract.
 
 | Variable | Default | Purpose |
-| ----------------------- | ---------------------------------- | ------------------------------------- |
+| ----------------------- | ------------------------------------- | -------------------------------------- |
 | `SPLITR_PASSPHRASE` | prompts | Decrypts wallet secrets in `.splitr/` |
 | `SPLITR_HOME` | `./.splitr` | Where wallets and asset config live |
 | `SPLITR_HORIZON` | `https://horizon-testnet.stellar.org` | Horizon endpoint |
@@ -204,35 +423,45 @@ All optional. Defaults point at testnet and at the deployed contract.
 | `SPLITR_ASSET_CODE` / `SPLITR_ASSET_ISSUER` | issues `IDRX` locally | Point at an existing asset instead |
 | `SPLITR_SPONSOR_SECRET` | unset (relay returns 503) | Server-side key that pays relayed fees |
 
----
+## Contract Interactions on Testnet
+
+Both resolve on a public explorer as `invoke_host_function` against the contract
+address above, with `successful: true`. Bill #6, recorded and then settled in
+full:
+
+| What | Transaction |
+| ----------------------------------- | ----------------------------------------------------------- |
+| `create_bill` — 30,000 IDRX, 3 ways | [`f7026078…cec5f310`](https://stellar.expert/explorer/testnet/tx/f70260783286ecefae5365404d677af4e514dd2df83e358114415015cec5f310) |
+| `settle_part` — the last share | [`e6d52e7f…dc9a62a4`](https://stellar.expert/explorer/testnet/tx/e6d52e7f1575e6606cd5996bc620282b3127d6d3e53e16e976af5d64dc9a62a4) |
+
+The contract computed the three shares itself; the CLI passed only the total and
+the members. The settlement moved IDRX through the asset's Stellar Asset Contract
+in the same invocation that recorded it, which is why there is one hash and not
+two.
 
 ## Screenshots
 
 Taken against Stellar testnet with a real browser wallet. Every figure is live
-state read back from the chain, not a mock-up — the contract id in the app header
-is [`CCMCFRZ…GWSD`](https://stellar.expert/explorer/testnet/contract/CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD)
-and every transaction hash resolves on a public explorer.
+state read back from the chain, not a mock-up.
 
-### Wallet connected
+### Wallet Connected
 
 ![The app at /app with a Freighter account connected: the truncated address GBRB…J55Q in the nav, and the full address in the account panel below](docs/screenshots/01-wallet-connected.png)
 
 The address sits in the nav rather than a "Connected" badge, because the useful
 question is *which* account: several of these wallets hold more than one, and
-paying from the wrong one is the mistake worth designing against. The contract id
-under the heading is the deployed contract every figure on this page comes from.
+paying from the wrong one is the mistake worth designing against.
 
-### Balance displayed
+### Balance Displayed
 
 ![The Freighter wallet showing 9,999.8145821 XLM and 250,000 IDRX for the connected account](docs/screenshots/02-balance.png)
 
-The same two figures the account panel reads in the screenshot above —
-`250,000 IDRX` and `9999.8145821 XLM` — shown by the wallet itself. IDRX is the
-settlement asset; XLM is what pays the fees. The app takes them from Horizon,
-because an account's trustlines are classic ledger state, which Soroban RPC does
-not serve.
+The same two figures the account panel reads in the screenshot above, shown by
+the wallet itself. IDRX is the settlement asset; XLM is what pays the fees. The
+app takes them from Horizon, because an account's trustlines are classic ledger
+state, which Soroban RPC does not serve.
 
-### Recording a bill
+### Recording a Bill
 
 ![The New bill form: a name, a total in IDRX, a group selector, and a field for the members' Stellar addresses](docs/screenshots/03-new-bill.png)
 
@@ -240,24 +469,18 @@ A bill needs at least two people, and the connected account is added as the paye
 automatically. Groups live in the browser and members can be added by name — a
 wallet is only needed at the moment a bill goes on chain.
 
-### A successful testnet transaction
+### A Successful Testnet Transaction
 
 ![Three bills on the deployed contract, each listing its members and what they owe against what they have paid](docs/screenshots/04-transaction.png)
 
 Bills read back off the contract after settling. On `#2 · Nasi Goreng` the
 connected account shows `3,333.3333334 / 3,333.3333334` — its share paid in full,
 and the odd stroop that the largest-remainder split hands to the first member.
-Outstanding is what the group still owes the payer.
 
-Settling calls the contract, which transfers through the asset's Stellar Asset
-Contract in the same invocation that records the payment. The transfer and the
-record cannot disagree, because either both happened or neither did — which is
-why this view needs no reconciliation step behind it.
+### The Transaction Result, Shown to the User
 
-### The transaction result, shown to the user
-
-> **To capture:** settle a share from `/app` and screenshot the receipt panel that
-> appears — the summary line, the transaction hash, and its link to
+> **To capture:** settle a share from `/app` and screenshot the receipt panel
+> that appears — the summary line, the transaction hash, and its link to
 > stellar.expert. Save it as `docs/screenshots/05-transaction-result.png` and add
 > the image here.
 
@@ -265,7 +488,7 @@ The hash is a link. A confirmation without one asks to be taken on trust, which
 is the habit this project exists to replace — the whole promise is that the proof
 does not depend on trusting Splitr.
 
-### Mobile
+### Mobile Responsive UI
 
 > **To capture:** open `/app` at a phone width (375px in devtools, or a real
 > phone) with a wallet connected and a bill on screen. Save it as
@@ -277,12 +500,12 @@ carry `break-all` so they fold instead of pushing the card wide. That is why
 there are only two `sm:` utilities in the whole dApp — the narrow case is the
 default one, not a special case bolted on afterwards.
 
-### The tests
+### Test Output
 
 > **To capture:** run `npm test` and screenshot the terminal. Save it as
 > `docs/screenshots/07-tests.png` and add the image here.
 
-```
+```text
 $ npm test
 
 ✔ agrees with the contract, case for case
@@ -308,329 +531,61 @@ $ npm test
 ```
 
 Seventeen here, plus 16 in `cargo test` for the contract. They are not a
-formality: four of them exist because they caught something. The parity cases
-catch a change to the splitting engine on either side, and the sponsorship
-fixture was rewritten after a live account disagreed with it.
+formality: the parity cases catch a change to the splitting engine on either
+side, and the sponsorship fixture was rewritten after a live account disagreed
+with it.
 
-### The landing page
+### The Landing Page
 
 ![The hero: "Who owes what, and who has paid." beside a live calculator splitting Rp 300,000 three ways](docs/screenshots/08-landing.png)
 
 The calculator is not a mock-up. It imports `splitByWeights` from `src/money.ts`,
 the same function the CLI and the contract mirror, so "shares sum to the total,
-exactly" is the computation itself rather than a claim about it.
-
----
-
-## How it works
-
-Everything below is the reasoning behind the decisions above. It is here so that
-changing one of them is a deliberate act rather than an accident.
-
-### Why there are two settlement paths
-
-`split` settles with classic payments and rebuilds the truth afterwards by
-replaying Horizon; it needs no contract and works with any wallet on the network.
-`bill` hands the arithmetic to the contract, which computes the shares itself and
-moves the asset inside the same invocation that records the payment. There is
-nothing to reconcile because nothing can disagree.
-
-The contract settles through the asset's Stellar Asset Contract, so both paths
-move the same IDRX: after two members settled bill #1 on-chain, `wallet balance`
-showed alice up exactly 200,000 and the two payers down exactly 100,000 each.
-
-Verified end-to-end on testnet: a 300,000 IDRX dinner split three ways, settled
-by two real payments, reconciled from ledger history. Balances cross-check
-exactly against every transfer.
-
-### The splitting algorithm exists twice
-
-`splitByWeights` in `src/money.ts` (`BigInt`) and `split_by_weights` in
-`soroban/contracts/splitr-split/src/lib.rs` (`i128`) are the same largest-remainder
-algorithm, tie-break by index included. **Changing one without the other is the
-easiest way to break this repo**, so the same cases are asserted from both ends:
-`test::agrees_with_money_ts` runs them through the contract, `scripts/parity.ts`
-runs them through the TypeScript engine, and each is a separate CI job.
-
-Both halves are needed because neither catches the other's drift. `cargo test`
-never learns that TypeScript changed, and `tsc` checks types, not values — flip
-the tie-break in `money.ts` from ascending to descending index and the typecheck
-stays green while the odd stroop silently moves to a different member. The
-landing page's preview runs the TypeScript engine and the chain runs the Rust
-one; if they disagree, the page is telling people something the contract will not
-honour.
-
-`src/money.ts` is also imported directly by the landing page's hero calculator,
-so it must stay dependency-free and browser-safe. Split 100,000 three ways on the
-page and you get the CLI's exact output, because it is the CLI's code.
-
-### Two things the dApp needed from the contract
-
-**`bills_for(address)`.** Without an index of which bills an address is on, "my
-bills" means reading every bill in the contract and filtering client-side — one
-round trip per bill, every time anyone opens the app. `create_bill` now appends
-the id to each member's list.
-
-**`settle_part(id, member, amount)`.** Paying half now and half later is the
-ordinary case, not an edge case; `owes`/`paid` always supported it and only
-`settle` insisted on closing the whole gap at once. `settle` now delegates to it,
-and a test asserts both paths refuse for the same reasons so the same mistake
-cannot report two different errors. Overpayment is refused rather than clamped,
-because silently taking less than asked for makes the returned amount disagree
-with what the caller meant.
-
-### Events
-
-The contract publishes `Created` and `Settled` through `#[contractevent]`, which
-puts them in the contract's SEP-48 spec. That is what lets `bill watch` decode
-them with `spec.parseEvent` — field names come from the deployed wasm, not from a
-copy of them kept in TypeScript. `id` is an indexed topic, so an indexer can
-follow one bill.
-
-Soroban RPC has no subscription, so `watch` polls `getEvents` on a cursor at the
-testnet ledger cadence of five seconds. The cursor makes it resumable and
-lossless across restarts, and a failed poll backs off and retries from the same
-cursor rather than killing the watcher.
-
-### Arriving with nothing
-
-Stellar charges every account a reserve: 1 XLM to exist, 0.5 more per trustline.
-That was this project's largest practical obstacle — a treasurer cannot tell four
-friends to go buy XLM before anyone can be paid back in Rupiah.
-
-`wallet onboard` creates the account and its trustline inside a
-`beginSponsoringFutureReserves` / `endSponsoringFutureReserves` sandwich, which is
-the only way `createAccount` may start at zero. All four operations ride in one
-transaction because they are one decision, and it carries two signatures: the
-sponsor's, and the sponsored account's, because Stellar requires the sponsored
-party to agree to both ends of the sandwich.
-
-That gets a member on-chain, but not transacting — a zero-XLM account still cannot
-pay a fee. `--fee-source` wraps the settlement in a **fee-bump**, so someone else
-bids the fee while the payment itself is still signed by, and debited from, the
-member.
-
-Verified on testnet. `dina` was onboarded, received 50,000 IDRX, and settled a
-20,000 share:
-
-```
-dina: SKIPPED — Transaction rejected: tx_insufficient_balance   # without --fee-source
-dina → alice  20,000 IDRX                                       # with it
-```
-
-Her XLM balance before and after both read `0`. Horizon reports `num_sponsored: 3`
-against her account and names the issuer as sponsor of both the account and the
-trustline.
-
-**A reserve bug this surfaced.** `snapshot()` computed the minimum balance as
-`(2 + subentries) * baseReserve`, which ignores sponsorship. It told a member
-holding zero XLM that their floor was 1.5 — the exact thing sponsorship removes —
-and understated the sponsor's. The formula is
-`(2 + subentries + numSponsoring - numSponsored) * baseReserve`; `dina` now reads
-a floor of 0 and the issuer 2.5.
-
-### Giving the reserve back
-
-Reserves went out and never came back, which made the sponsor's balance a
-one-way ratchet — and that account also funds the *next* onboarding, so it was a
-ceiling on how many members a group could bring on at all.
-
-```bash
-node src/cli.ts wallet unsponsor dina --sponsor issuer
-```
-
-Only the sponsor signs, because revocation releases something the sponsor pays
-for. But the member's *balance* decides whether it may happen: a revoked reserve
-falls back onto the account holding the entry, so a member still holding zero
-cannot take theirs back — the network would refuse the whole transaction.
-Sponsorship is not a loan callable at will; it is released once the member can
-carry it. `src/sponsorship.ts` says so before anything is signed, and names the
-account to top up and by how much, which `op_low_reserve` does not.
-
-Verified on testnet with a throwaway member. Onboarding moved the issuer's floor
-from 4 to 5.5 XLM; revoking moved it back to 4 and left the member carrying 1.5
-themselves. Horizon then reports `num_sponsored: 0` and no sponsor on either
-entry. Run it twice and the second is refused rather than paid for again.
-
-**A units bug this surfaced,** and the live check is what caught it — the unit
-tests had agreed with the mistake. `num_sponsored` counts reserve *units*, not
-ledger entries, and an account's own entry is worth **two** of them: it is the
-`2` in the formula above. An onboarded member therefore reads `num_sponsored: 3`
-for two sponsored entries. Counting entries made `wallet unsponsor` report 1 XLM
-released instead of 1.5, and tell a treasurer to send 1 XLM when the network was
-about to demand 1.5 — a refusal, at the moment they were trying to fix one.
-
-### Reaching the app with no XLM
-
-Sponsored reserves put a member on-chain owning nothing, but Stellar's answer to a
-zero-XLM fee — a fee-bump — has to be signed by the *sponsor*. That key cannot
-live in a browser, so `api/relay.ts` is the one piece of Splitr that runs on a
-server: the member signs the call, the relay wraps it in a fee-bump and submits.
-
-It is not a general relay. It is an endpoint on the public internet that spends
-someone else's XLM, so four things have to hold before it signs anything:
-
-| Check | What it stops |
-| ------------------------------------------- | ------------------------------------------------ |
-| One operation, invoking *this* contract | Paying for arbitrary transactions |
-| The caller holds less than 0.5 XLM | Funded accounts helping themselves to a free fee |
-| The sponsor is still above its floor | The sponsor being emptied rather than spent down |
-| No relayed call for that account in a minute | One account in a loop |
-
-Only the first of those existed at Green Belt, and it was not enough: a valid
-invocation, repeated from a funded account, was free money out of the sponsor.
-The second is the load-bearing one, because it makes abuse cost an attacker a
-genuinely empty account per stream of requests rather than nothing at all. It is
-also the check the browser already made on its own machine — `FEE_FLOOR_XLM` in
-`web/src/lib/contract.ts` — and an endpoint anyone can post to cannot take that
-on trust, so it now reaches the same conclusion from the ledger.
-
-The fee is capped at 0.1 XLM per call on top of all of that. Set
-`SPLITR_SPONSOR_SECRET` in the deployment environment; with it unset the endpoint
-returns 503 and the app simply asks people to fund their own account.
-
-Every refusal lives in `api/guards.ts`, apart from the I/O, because that is what
-makes it testable — `npm test` runs each one. The app only takes this route when
-the connected account holds less than 0.5 XLM; everyone else pays their own fee,
-which is cheaper for the sponsor and one less moving part.
-
-### The landing page
-
-`web/` is the marketing site, built from the PRD in `context/Splitr-PRD.md`.
-
-**Connecting a wallet.** The CLI holds keys. The page does not and must not —
-custody is this project's unresolved regulatory exposure, and a site that asks for
-a secret key is the wrong answer to it. Visitors bring their own wallet through
-[Stellar Wallets Kit](https://github.com/Creit-Tech/Stellar-Wallets-Kit).
-"Install Freighter" is a real drop-off for someone who already uses Lobstr on
-their phone.
-
-The kit and its modules are 209 KB — 73% on top of everything else the page ships
-— so they are behind a dynamic import. A visitor who reads the page and never
-connects downloads none of it. The choice is remembered in
-`localStorage['splitr-wallet']` and restored with `getAddress`, which reads the
-kit's memory rather than prompting, so returning without an authorised origin
-raises no popup.
-
-**Theming.** Colour lives entirely in the token blocks at the top of
-`web/src/styles.css` — a shadcn-style `:root` / `.dark` pair mapped into Tailwind
-through `@theme inline`. No component holds a hex value. A blocking script in
-`web/index.html` stamps the class before first paint so there is no flash.
-
-Two deliberate deviations from the supplied token set, both marked in the file:
-`--muted-foreground` is darkened in light mode (the supplied value measured 3.94:1
-on `--background`, under AA for body copy), and `--faint` is added as a third text
-tier for 10–13px metadata. Measured ratios are 4.58–5.44:1 in light and 5.68–9.66:1
-in dark.
-
-**Languages.** Every visible string lives in `web/src/lib/copy.ts`, in English and
-Indonesian. The English object is the schema and the Indonesian one is typed
-against it, so a missing key fails the build instead of leaving a blank on the
-page. The toggle falls back to `navigator.language`, so an Indonesian visitor
-lands on Indonesian without touching anything.
-
-The Indonesian is written rather than translated: a treasurer says "nalangin", not
-"menalangi terlebih dahulu". Terms this audience already uses in English
-(on-chain, stablecoin, testnet, wallet, memo, ledger) are left alone. Thousands
-group with dots and decimals with a comma, and the hero headline gets a lower size
-ceiling because the same sentence runs longer. The 7-decimal ledger value stays
-canonical in both languages, because that is the string that goes on chain.
-
-**The protocol stack section.** `web/src/sections/Stack.tsx` maps the five Stellar
-layers to their role in Splitr, drawn as a stack rather than a table because the
-one thing worth seeing is how much of it actually runs: a live layer gets a filled
-card, a planned one a dashed outline. Four of the five are live. Only the SEP-24
-ramp is still planned, and it stays planned until a real IDR anchor exists.
-
-**The how-it-works carousel.** `web/src/sections/HowItWorks.tsx` puts the three
-steps on a real horizontal track rather than crossfading them in place. A track
-gets the direction right for free, and holds the height of its tallest slide so
-nothing jumps. The 650ms slide says which way you moved; the two comparison cards
-then rise with a 260ms and 360ms delay, so the claim lands after the picture has
-settled. Off-screen slides carry `inert`. The global `prefers-reduced-motion`
-block in `styles.css` collapses all of it to an instant cut.
-
-**Imagery.** The originals live in `web/img/` at roughly 2750x1536 and 6 MB each.
-**Those are sources, not assets.** What ships is `web/img/opt/*.webp`: resized to
-1400px wide at q82, which takes all four from 24 MB to 416 KB with no visible loss.
-Regenerate after replacing an original:
-
-```bash
-cd web/img
-sips --resampleWidth 1400 name.png --out /tmp/name.png
-cwebp -q 82 -m 6 /tmp/name.png -o opt/name.webp     # brew install webp
-```
-
-Import the `opt/` file, never the PNG — Vite inlines whatever it is given.
-
-### The dApp
-
-Two pages, so `web/src/lib/useRoute.ts` is two lines of routing rather than a
-router. Path-based rather than hash-based, because the landing page already uses
-`#how`, `#demo` and `#faq` to scroll and a hash router would fight them for the
-same slot. The cost is that a static host has to rewrite unknown paths to
-`index.html`; `web/public/_redirects` does that for Netlify, `vercel.json` for
-Vercel, and Vite's dev server does it already.
-
-Everything the app needs — `@stellar/stellar-sdk` and the wallet kit — is behind a
-dynamic import, because the SDK alone is larger than the whole landing page.
-
-**Who is on a bill, and where that lives.** The division is deliberate: *who was
-there is a local fact, what was settled is a ledger fact.* Only the second has to
-be trustless. Groups and members live in `localStorage`, because the group-then-split
-flow has to work before anyone has a wallet — and `create_bill` takes a
-`Vec<Address>` that structurally cannot hold such a person. A bill is blocked from
-going on chain until every member has an address; recording a subset would silently
-change everyone else's share. Names are shown on bill cards **in addition to** the
-address, never instead: the address is what the ledger settled with, and a local
-nickname must not be able to hide it.
-
-## Deploying
-
-The site is a static bundle with no server and no secrets — the contract ids in it
-are public by design. The one thing a host has to get right is serving `index.html`
-for unknown paths, because `/app` is a client-side route and a refresh there would
-otherwise 404.
-
-The build does not live at the repo root, which trips up framework auto-detection:
-left to itself, Vercel runs a bare `vite build` from the root and fails with
-`UNRESOLVED_ENTRY`. `vercel.json` pins the real build:
-
-```
-Build command      npm run web:build
-Output directory   web/dist
-```
-
-Netlify and Cloudflare Pages need the same two settings and read the SPA fallback
-from `web/public/_redirects`; Vercel ignores that file, so the rewrite is in
-`vercel.json` instead. GitHub Pages is the awkward one — no SPA fallback, and a
-project page is served from a `/<repo>` subpath that breaks the `/app` route.
-
-`.vercelignore` keeps the 24 MB of illustration sources in `web/img/*.png` out of
-the upload.
-
-## Design decisions worth knowing
-
-**Own test asset, not testnet USDC.** Testnet carries 200+ unrelated `USDC`
-issuers, none with a verifiable home domain. Splitr issues `IDRX`, an IDR-pegged
-test token — reproducible, and closer to the brief's Rupiah story. Point at any
-real asset with `SPLITR_ASSET_CODE` / `SPLITR_ASSET_ISSUER`.
-
-**Integer money.** All arithmetic runs in units of 1e-7 (Stellar's precision) via
-`BigInt`, with a largest-remainder split. Shares always sum back to the total
-exactly — never a lost stroop.
-
-**Memo as the join key.** Every settlement carries `splitr:<id>` as a `MemoText`.
-That is what lets reconciliation attribute a payment to a specific bill, and it's
-why two concurrent splits between the same people don't contaminate each other.
-
-**Ledger is the source of truth.** `split settle` reconciles before paying, so it
-is idempotent: run it twice and the second run pays nothing. Partial payments show
-as `OPEN … short N`.
+exactly" is that computation run early rather than a claim about it.
+
+## Design Decisions Worth Knowing
+
+**The splitting algorithm exists twice, and both halves are pinned.**
+`splitByWeights` in `src/money.ts` (`BigInt`) and `split_by_weights` in `lib.rs`
+(`i128`) are the same largest-remainder algorithm, tie-break included.
+`agrees_with_money_ts` runs the cases through the contract; `scripts/parity.ts`
+runs them through the TypeScript engine. Both are needed, because neither catches
+the other's drift: `cargo test` never learns TypeScript changed, and `tsc` checks
+types, not values. Flip the tie-break in `money.ts` and the typecheck stays green
+while the odd stroop silently moves to a different member.
 
 **The contract computes, it does not record.** If it only stored the numbers the
 bill's creator typed, the creator could quietly give themselves a smaller share,
 and putting any of this on a ledger would buy nothing.
+
+**Memo as the join key.** Every classic settlement carries `splitr:<id>` as a
+`MemoText`. That is what lets reconciliation attribute a payment to a specific
+bill, and why two concurrent splits between the same people do not contaminate
+each other.
+
+**Own test asset, not testnet USDC.** Testnet carries 200+ unrelated `USDC`
+issuers, none with a verifiable home domain. Splitr issues `IDRX`, an IDR-pegged
+test token — reproducible, and closer to the brief's Rupiah story.
+
+**Custody stays with the user.** The CLI holds keys, which is correct for an
+operator tool. The web app does not and must not: a site that asks for a secret
+key is the wrong answer to this project's regulatory exposure.
+
+**Reserves are the real onboarding wall.** Stellar charges 1 XLM for an account
+and 0.5 per trustline. A treasurer cannot tell four friends to buy XLM before
+anyone can be paid back in Rupiah. `wallet onboard` sponsors both inside a
+`beginSponsoringFutureReserves` / `endSponsoringFutureReserves` sandwich, and
+`--fee-source` fee-bumps the settlement so a zero-XLM member can still transact.
+
+**Sponsorship is released, not called in.** A revoked reserve falls back onto the
+account holding the entry, so `wallet unsponsor` refuses until the member can
+carry it — and names the account to top up, and by how much.
+
+**The relay is guarded four ways.** It is an endpoint on the public internet that
+spends someone else's XLM: one operation invoking this contract, a caller holding
+less than 0.5 XLM, a sponsor above its floor, and no relayed call for that
+account in the last minute. Every refusal lives in `api/guards.ts`, apart from
+the I/O, which is what makes it testable.
 
 **Dynamic fees.** Testnet surge-prices well above the 100-stroop base fee. Splitr
 bids `p90 × 2`, capped at 0.01 XLM. Stellar charges the market-clearing rate, not
@@ -639,38 +594,156 @@ your bid.
 **Secrets encrypted at rest.** AES-256-GCM under a scrypt-stretched passphrase in
 `.splitr/` (gitignored). Testnet keys are disposable; the habit is not.
 
-## How the primitives map to the product
+### Two Bugs Worth Recording
 
-| Stellar primitive | Splitr's version |
-| ------------------ | --------------------------------------------------- |
-| `Keypair.random()` | onboarding a group member |
-| Friendbot funding | testnet stand-in for an IDR on-ramp |
-| Account balances | "can this member settle their share?" |
-| `changeTrust` | accepting the group's settlement currency |
-| `payment` + memo | **settling one share of a split** |
-| Payment history | proof-of-payment replacing "already transferred 🙏" |
-| Sponsored reserves | a member who arrives owning nothing |
-| Fee-bump | that member transacting anyway |
-| Soroban contract | the bill itself, and the arithmetic behind it |
+**The reserve floor.** `snapshot()` computed the minimum balance as
+`(2 + subentries) * baseReserve`, which ignores sponsorship. It told a member
+holding zero XLM that their floor was 1.5 — the exact thing sponsorship removes.
+The formula is `(2 + subentries + numSponsoring - numSponsored) * baseReserve`.
 
-## Known limitations
+**Reserve units are not ledger entries.** `num_sponsored` counts reserve *units*,
+and an account's own entry is worth **two** of them — the `2` in the formula
+above. An onboarded member reads `num_sponsored: 3` for two sponsored entries.
+Counting entries made `wallet unsponsor` report 1 XLM released instead of 1.5,
+and tell a treasurer to send 1 XLM when the network was about to demand 1.5. The
+unit tests had agreed with the mistake; a live account is what disagreed.
 
-- **The relay's rate limit is per serverless instance.** It is held in memory,
-  because a shared store is a dependency and a bill this project does not have on
-  testnet. A caller spread across warm instances gets a multiple of the intended
-  rate, so what actually bounds the spend is the balance checks either side of
-  it, not the cooldown.
-- **The relay's network path is still unexercised.** Every refusal it makes is
-  now covered by `npm test`, but no real request has reached the deployed
-  endpoint — the fee-bump itself, and Horizon answering with a balance, have
-  never run in anger. Verifying that needs a deployment with
-  `SPLITR_SPONSOR_SECRET` set and an account genuinely holding zero XLM.
-- **The relay tracks what the sponsor has left, not what it has spent.** A floor
-  stops the account being emptied; it does not tell anyone how fast it drained.
-- **Nothing prompts a hand-back.** `wallet unsponsor` exists, but no one is told
-  when a member has become able to carry their own reserves — an operator has to
-  think to look. At fifty members that wants a report, not a habit.
-- **The CLI still holds keys**, which is correct for an operator tool and wrong
-  for anything a member touches. The web app never sees a secret.
-- **Mainnet is gated on a real IDR anchor**, which the brief defers to "future."
-  That remains the project's largest unstated risk.
+## Future Scope
+
+The [product brief](context/Splitr%20Product%20Idea%20Brief.pdf) stages this
+project in belts. Levels 1 through 4 are built and running.
+
+### Delivered
+
+| Level | Belt | What it added |
+| ----- | ------ | -------------------------------------------------------------------------- |
+| 1 | White | Wallets, an issued settlement asset, real payments, ledger reconciliation |
+| 2 | Yellow | The Soroban contract deployed to testnet, plus browser wallet connection |
+| 3 | Orange | The dApp at `/app`: partial settlement, per-member index, live events |
+| 4 | Green | Sponsored onboarding and a fee relay, so a member with no XLM can use the app |
+
+### Short-Term Enhancements
+
+1. **Bill Editing and Cancellation**
+
+   * Amend a bill before anyone has settled against it
+   * Close a bill recorded by mistake, rather than leaving it open forever
+
+2. **Reminders Derived From Ledger State**
+
+   * Notify only the members a bill is still short of
+   * Read that from `outstanding()` rather than a locally kept list
+
+3. **Group History in the App**
+
+   * Surface `bills_for()` as a timeline rather than a flat list
+   * Show what a group has settled over time, not just what is open
+
+4. **Recurring Bills**
+
+   * The monthly arisan, shared rent, or a standing subscription
+   * Record on a schedule instead of retyping the same members
+
+### Medium-Term Development
+
+5. **Multi-Asset Bills**
+
+   * Settle in whichever asset a group already holds
+   * Remove the assumption of one configured settlement token
+
+6. **A Shared Rate Limit for the Relay**
+
+   * Replace the per-instance cooldown with a store both instances can see
+   * Add a spend ceiling over time, not only a balance floor
+
+7. **Sponsorship Reporting**
+
+   * Tell an operator which members can now carry their own reserves
+   * Make handing reserves back a prompt rather than something to remember
+
+8. **Split Templates**
+
+   * Save the weights a group reuses
+   * Apply them to a new bill without retyping
+
+### Long-Term Vision
+
+9. **SEP-24 On/Off Ramp**
+
+   * The last unlit layer of the protocol stack
+   * What turns testnet IDRX into Rupiah someone can actually spend
+
+10. **Mainnet With a Real IDR Anchor**
+
+    * The project's largest unresolved dependency
+    * Deferred by the brief to "future", and still the gating item
+
+11. **Group Treasuries**
+
+    * A shared balance a group funds together
+    * Removes the need for one member to front every bill
+
+12. **Cross-Group Settlement**
+
+    * Net what two groups owe each other into a single transfer
+    * Fewer transactions, same verifiable record
+
+## Known Limitations
+
+* **The relay's rate limit is per serverless instance.** It is held in memory,
+  because a shared store is a dependency this project does not have on testnet. A
+  caller spread across warm instances gets a multiple of the intended rate, so
+  what actually bounds the spend is the balance checks either side of it.
+* **The relay's network path is still unexercised.** Every refusal it makes is
+  covered by `npm test`, but no real request has reached the deployed endpoint.
+* **The relay tracks what the sponsor has left, not what it has spent.** A floor
+  stops the account being emptied; it does not say how fast it drained.
+* **Nothing prompts a sponsorship hand-back.** `wallet unsponsor` exists, but no
+  one is told when a member has become able to carry their own reserves.
+* **The CLI holds keys**, which is correct for an operator tool and wrong for
+  anything a member touches. The web app never sees a secret.
+* **Mainnet is gated on a real IDR anchor**, which the brief defers to "future."
+
+## Technical Requirements
+
+* Node 24 or newer — runs TypeScript natively, so `src/` has no build step
+* Rust and the Soroban SDK, for building or testing the contract
+* Stellar CLI, for contract deployment
+* A Soroban-compatible browser wallet — Freighter, xBull, Albedo, Lobstr, Hana
+  or Rabet
+* Stellar testnet access, through Horizon and Soroban RPC (the defaults are the
+  public endpoints)
+
+## Use Case
+
+Splitr is built for group finance where the record matters more than the
+interface:
+
+* Splitting a restaurant bill among friends
+* Arisan — the Indonesian rotating savings group
+* Shared household expenses between housemates
+* Trip and event costs fronted by one organiser
+* Team lunches and offsites reimbursed later
+* Any group where "I already transferred 🙏" is currently the proof
+
+## Why Stellar?
+
+Stellar settles in seconds at a fraction of a cent, which is the difference
+between splitting a bill on chain and it being an absurd thing to do. Native
+support for issued assets makes a Rupiah-pegged token a first-class citizen
+rather than a contract to write, and the memo field gives every payment a place
+to carry which bill it belongs to.
+
+Two Stellar features are load-bearing here in a way they would not be elsewhere.
+**Sponsored reserves** let a member join owning nothing, which is the difference
+between a working group and one that stalls at the first person without XLM.
+**Fee-bumps** let that same member transact before they hold a cent. Together
+they remove the onboarding wall that would otherwise make this product unusable
+for exactly the people it is meant for.
+
+Soroban then supplies what classic Stellar cannot: arithmetic everyone can
+verify, and a transfer that cannot be separated from the record of it.
+
+---
+
+**Splitr** — Ending disputes over who has paid, with Stellar & Soroban
