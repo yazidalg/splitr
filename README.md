@@ -6,6 +6,22 @@ Rupiah-pegged token, and prove who paid from the ledger instead of a screenshot.
 - **Repository:** https://github.com/yazidalg/splitr
 - **Contract (testnet):** [`CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD`](https://stellar.expert/explorer/testnet/contract/CCMCFRZFQLLCUHY44VT2XYCIYNNQWIWFUVGPQXRDPP6XMFVGG4A4GWSD)
 - **Network:** Stellar testnet
+- **Demo video:** _to add_
+
+### Contract interactions on testnet
+
+Both resolve on a public explorer as `invoke_host_function` against the contract
+above. Bill #6, recorded and settled in full:
+
+| What | Transaction |
+| ----------------------------------- | ----------------------------------------------------------- |
+| `create_bill` — 30,000 IDRX, 3 ways | [`f7026078…cec5f310`](https://stellar.expert/explorer/testnet/tx/f70260783286ecefae5365404d677af4e514dd2df83e358114415015cec5f310) |
+| `settle_part` — the last share | [`e6d52e7f…dc9a62a4`](https://stellar.expert/explorer/testnet/tx/e6d52e7f1575e6606cd5996bc620282b3127d6d3e53e16e976af5d64dc9a62a4) |
+
+The contract computed the three shares itself; the CLI only passed the total and
+the members. The settlement moved IDRX through the asset's Stellar Asset Contract
+in the same invocation that recorded it, which is why there is one hash and not
+two.
 
 ---
 
@@ -249,9 +265,56 @@ The hash is a link. A confirmation without one asks to be taken on trust, which
 is the habit this project exists to replace — the whole promise is that the proof
 does not depend on trusting Splitr.
 
+### Mobile
+
+> **To capture:** open `/app` at a phone width (375px in devtools, or a real
+> phone) with a wallet connected and a bill on screen. Save it as
+> `docs/screenshots/06-mobile.png` and add the image here.
+
+The layout is responsive by wrapping rather than by breakpoints: the rows that
+carry an address and a figure are `flex-wrap`, and the 56-character addresses
+carry `break-all` so they fold instead of pushing the card wide. That is why
+there are only two `sm:` utilities in the whole dApp — the narrow case is the
+default one, not a special case bolted on afterwards.
+
+### The tests
+
+> **To capture:** run `npm test` and screenshot the terminal. Save it as
+> `docs/screenshots/07-tests.png` and add the image here.
+
+```
+$ npm test
+
+✔ agrees with the contract, case for case
+✔ parts always sum back to the total
+✔ heavier weights never receive less than lighter ones
+✔ a single call to the Splitr contract is accepted
+✔ anything but one call to the Splitr contract is refused
+✔ only an account that cannot pay its own fee is relayed for
+✔ the sponsor stops at its floor, not at empty
+✔ an account gets one relayed call per cooldown
+✔ the limiter forgets accounts once their cooldown passes
+✔ an onboarded member has both entries to hand back
+✔ a member holding nothing cannot take their reserve back
+✔ a member who has funded themselves can
+✔ a stroop short is still short
+✔ only the entries this sponsor pays for are revoked
+✔ a sponsor with nothing to release is told so, not sent to the network
+✔ an account that never made it on chain is refused first
+✔ a member who sponsors someone else keeps carrying that
+ℹ tests 17
+ℹ pass 17
+ℹ fail 0
+```
+
+Seventeen here, plus 16 in `cargo test` for the contract. They are not a
+formality: four of them exist because they caught something. The parity cases
+catch a change to the splitting engine on either side, and the sponsorship
+fixture was rewritten after a live account disagreed with it.
+
 ### The landing page
 
-![The hero: "Who owes what, and who has paid." beside a live calculator splitting Rp 300,000 three ways](docs/screenshots/06-landing.png)
+![The hero: "Who owes what, and who has paid." beside a live calculator splitting Rp 300,000 three ways](docs/screenshots/08-landing.png)
 
 The calculator is not a mock-up. It imports `splitByWeights` from `src/money.ts`,
 the same function the CLI and the contract mirror, so "shares sum to the total,
