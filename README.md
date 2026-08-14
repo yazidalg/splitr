@@ -439,10 +439,16 @@ the members. The settlement moved IDRX through the asset's Stellar Asset Contrac
 in the same invocation that recorded it, which is why there is one hash and not
 two.
 
+Both hashes above are links, and so is the one the app shows back to the user
+after a settlement (`explorerTx` in `web/src/lib/contract.ts`, rendered in the
+receipt panel). A confirmation without one asks to be taken on trust, which is
+the habit this project exists to replace: the proof is not supposed to depend on
+trusting Splitr.
+
 ## Screenshots
 
-Taken against Stellar testnet with a real browser wallet. Every figure is live
-state read back from the chain, not a mock-up.
+The app shots are taken against Stellar testnet with a real browser wallet —
+every figure in them is live state read back from the chain, not a mock-up.
 
 ### Wallet Connected
 
@@ -477,63 +483,34 @@ Bills read back off the contract after settling. On `#2 · Nasi Goreng` the
 connected account shows `3,333.3333334 / 3,333.3333334` — its share paid in full,
 and the odd stroop that the largest-remainder split hands to the first member.
 
-### The Transaction Result, Shown to the User
-
-> **To capture:** settle a share from `/app` and screenshot the receipt panel
-> that appears — the summary line, the transaction hash, and its link to
-> stellar.expert. Save it as `docs/screenshots/05-transaction-result.png` and add
-> the image here.
-
-The hash is a link. A confirmation without one asks to be taken on trust, which
-is the habit this project exists to replace — the whole promise is that the proof
-does not depend on trusting Splitr.
-
 ### Mobile Responsive UI
 
-> **To capture:** open `/app` at a phone width (375px in devtools, or a real
-> phone) with a wallet connected and a bill on screen. Save it as
-> `docs/screenshots/06-mobile.png` and add the image here.
+![Splitr at a 375px phone width: the nav reduced to the logo, the EN/ID and theme toggles and a menu button; the hero stacked above the split calculator, which shows Rp 300,000 divided between Rani, Dimas and Sari at 100,000 each](docs/screenshots/06-mobile.png)
 
-The layout is responsive by wrapping rather than by breakpoints: the rows that
+At a phone width the nav keeps the language and theme toggles out on the bar and
+folds only the links behind a menu button — those two are what a visitor reaches
+for before reading anything. The calculator keeps every control it has on a
+desktop: the people stepper, the Equal/Weighted switch, and a row per member.
+There is no cut-down mobile variant to drift out of step with the real one.
+
+The dApp is responsive by wrapping rather than by breakpoints. The rows that
 carry an address and a figure are `flex-wrap`, and the 56-character addresses
 carry `break-all` so they fold instead of pushing the card wide. That is why
-there are only two `sm:` utilities in the whole dApp — the narrow case is the
-default one, not a special case bolted on afterwards.
+there are only two `sm:` utilities in the whole of `web/src/app/DApp.tsx` — the
+narrow case is the default one, not a special case bolted on afterwards.
 
 ### Test Output
 
-> **To capture:** run `npm test` and screenshot the terminal. Save it as
-> `docs/screenshots/07-tests.png` and add the image here.
+![A terminal running npm test: seventeen ticked checks with their durations, then tests 17, suites 0, pass 17, fail 0, cancelled 0, skipped 0, todo 0](docs/screenshots/07-test.png)
 
-```text
-$ npm test
-
-✔ agrees with the contract, case for case
-✔ parts always sum back to the total
-✔ heavier weights never receive less than lighter ones
-✔ a single call to the Splitr contract is accepted
-✔ anything but one call to the Splitr contract is refused
-✔ only an account that cannot pay its own fee is relayed for
-✔ the sponsor stops at its floor, not at empty
-✔ an account gets one relayed call per cooldown
-✔ the limiter forgets accounts once their cooldown passes
-✔ an onboarded member has both entries to hand back
-✔ a member holding nothing cannot take their reserve back
-✔ a member who has funded themselves can
-✔ a stroop short is still short
-✔ only the entries this sponsor pays for are revoked
-✔ a sponsor with nothing to release is told so, not sent to the network
-✔ an account that never made it on chain is refused first
-✔ a member who sponsors someone else keeps carrying that
-ℹ tests 17
-ℹ pass 17
-ℹ fail 0
-```
-
-Seventeen here, plus 16 in `cargo test` for the contract. They are not a
-formality: the parity cases catch a change to the splitting engine on either
-side, and the sponsorship fixture was rewritten after a live account disagreed
-with it.
+`npm test` is `node --test scripts/*.ts` — seventeen checks, all passing, plus 16
+more in `cargo test` for the contract. They are not a formality.
+`agrees with the contract, case for case` is the parity fixture that catches a
+change to the splitting engine from either side, since `cargo test` never learns
+TypeScript changed and `tsc` checks types, not values. And
+`the sponsor stops at its floor, not at empty` alongside
+`a member holding nothing cannot take their reserve back` are refusals the
+sponsorship fixture only learned to make after a live account disagreed with it.
 
 ### The Landing Page
 
